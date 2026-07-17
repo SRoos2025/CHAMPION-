@@ -1,0 +1,254 @@
+---
+title: "v2-baseline-derivation"
+author: "Sanne Roos"
+format: docx
+execute: 
+  echo: false
+editor: source
+---
+
+```{r set-up}
+pacman::p_load( "rio", #load data
+                "purrr", #data untangling
+                "magrittr", #untangle data
+                "dplyr", #untangle data
+                "tidyr", #untangle data
+                "here", #to define path to extract and save files
+                "tableone", # to make table
+                 "knitr", #to make table) 
+                "conflicted", #resolve package conflics
+                "summarytools") #summarize missingness per variable
+#define importing path and path where to save to
+path <- "..."
+path_import <- "..."
+
+conflicts_prefer(dplyr::filter) #between dplyr & stats
+conflicts_prefer(dplyr::select)
+
+#load data
+load(paste0(path, "combined_mortality_event.Rdata"))
+lab_data <- import(paste0(path_import, "lab_db.csv"))
+
+#or immediately load baselinedata created below:
+load(paste0(path, "baseline.Rdata"))
+```
+
+```{r baseline}
+baseline_dialysis <- combined_mortality_event %>%
+  filter(mut_number == 1)#keep first observations only
+
+#make seperate variable for subgroup_later (patients of whom we do not have data on day 1),
+#calculate their first known day
+#rename to day so we can left join to lab data later, without matching on days_from_fdd
+start_later <- baseline_dialysis %>%
+  filter(subgroup_later == 1) %>%
+  select(days_from_fdd, id) %>%
+  rename(day = days_from_fdd)
+
+#clear workingspace memory
+rm(combined_mortality_event)
+
+#make everything lower case and rename gfme_id to id
+lab_data <- lab_data %>%
+  set_colnames(tolower(colnames(.))) %>%
+  #rename
+  mutate(
+    id = gfme_id
+  ) %>%
+  select(-gfme_id) %>%
+  #relocate to the left
+  relocate(id, .before = days_from_fdd)
+
+#keep for lab the first observation only
+baseline_lab <- lab_data %>%
+  group_by(id) %>%
+  mutate(
+    mut_number = row_number()
+  ) %>%
+  filter(mut_number == 1) %>%
+  ungroup()
+
+#clear working space
+rm(lab_data)
+
+#filter relevant ID's
+baseline_lab <- baseline_lab %>%
+  filter(id %in% baseline_dialysis[["id"]])
+
+#add the information on first dialysis day for the subgroup we do not have infomration on day zero
+baseline_lab <- left_join(baseline_lab, start_later, by = "id")
+
+#we only include values if they are in line with first treatment related data 
+#for subgroup later, we created variable days, so this is missing for all patients who we DO have on day zero
+#so if days is not missing, it is the subgroup from who we do not have data at day zero
+#if their first lab measurement is at the day they started, we keep them for baseline tabel
+#if days is missing, this person started dialysis in the data on day 0, so their first lab measurment should be 0 otherwise it is considered missing at baseline
+baseline_lab <- baseline_lab %>%
+  mutate(
+    keep = case_when(
+      !is.na(day) & days_from_fdd <= day ~ 1,
+      is.na(day) & days_from_fdd == 0 ~ 1,
+      .default = 0)
+  ) %>%
+  filter(keep == 1)
+
+#combine
+baseline <- left_join(baseline_dialysis, baseline_lab, by = "id")%>%
+  relocate(id, .before = days_from_fdd.x)
+
+#clear working space
+rm(baseline_dialysis)
+rm(baseline_lab)
+
+#save in between to save time when opening this document
+save(baseline, file = paste0(path, "baseline.Rdata"))
+load(paste0(path, "baseline.Rdata"))
+```
+
+```{r baselinetable}
+#make sure age is a factor
+baseline <- baseline %>%
+  mutate(
+    age_cat = as.factor(age_cat)
+  )
+
+#calculate gfr, which we only use for baseline table
+#we must also calculate eGFR
+#we use CKD epi 2009 equation
+baseline <- baseline %>%
+  mutate(
+    #note for egfr we need age, we only have categories so we take the middle
+    age_cont = case_when(
+      age_cat == "18-44" ~ 31,
+      age_cat == "45-64" ~ 55,
+      age_cat == "65-74" ~ 70,
+      age_cat == ">=75" ~ 88
+    ),
+    k = if_else(demo_male == 1, 0.9, 0.7),
+    alpha = if_else(demo_male == 1, -0.411, -0.329),
+    intercept = 141,
+    power_coef = -1.209,
+    age_coef = 0.993,
+    female_coef = 1.018,
+    gfr = intercept * pmin(lab_creatinine/k, 1) ^ alpha * (pmax(lab_creatinine/k, 1)^(power_coef))* (age_coef^age_cont)* if_else(demo_male == 1, 1, female_coef)
+  )
+    
+
+#define variables of interest for the baseline table
+vec_var <- c(
+  #demographic
+  "age_cat", "demo_male",
+  "country", "demo_region", 
+  "education",
+  #general health status
+  "bmi", "cci", "cause_kidn", "gfr",
+  #dialysis related
+  "vasc_access", "txt_pre_sbp", "txt_pre_dbp",
+   "txt_ufv", "modality", "txt_access_flow",
+  #lab values
+  "lab_crp",  "lab_ferritin", 
+  "lab_phosph", "lab_prealbumin", "lab_serum_na", "lab_potassium",
+  "lab_urine_volume", "lab_hgb", "lab_bicarb", "lab_creatinine", "lab_wktv",
+  "lab_pth", "lab_calcium", "lab_hgba1c")
+
+vec_cnt <- c("bmi", "cci", "gfr", "txt_pre_sbp", "txt_pre_dbp", "txt_ufv", "txt_access_flow",
+            "lab_crp",  "lab_ferritin", 
+  "lab_phosph", "lab_prealbumin", "lab_serum_na", "lab_potassium",
+  "lab_urine_volume", "lab_hgb", "lab_bicarb", "lab_creatinine", "lab_wktv",
+  "lab_pth", "lab_calcium", "lab_hgba1c")
+
+#specify that all variables not continuous are categorical
+vec_cat <- vec_var[!vec_var %in% vec_cnt]
+
+#make baseline table 
+
+tab_one <- CreateTableOne(vars = vec_var,
+                          data = baseline,
+                          factorVars = vec_cat) %>%
+  print(printToggle = FALSE,
+        contDigits = 1,
+        nonnormal = c("cci", "gfr", "txt_ufv", "txt_access_flow",
+                      "lab_urine_volume", "lab_creatinine", "lab_pth")) %>%
+  #to matrix
+  as.matrix() %>%
+  set_colnames("Baseline characteristics of the total study group (N = 32,653)") %>%
+  set_rownames(c(
+    "Number of individuals",
+    "Age category",
+    ">=75 years",
+    "18-44",
+    "45-64",
+    "65-74",
+    "Male, n (%)",
+    "Country, n (%)",
+    "Bosnia and Herzegovina",
+    "Croatia",
+    "Estonia",
+    "Finland",
+    "France",
+    "Hungary",
+    "Ireland",
+    "Italy",
+    "Poland",
+    "Portugal",
+    "Romania",
+    "Russia",
+    "Serbia",
+    "Slovak Republic",
+    "Slovenia",
+    "Spain",
+    "Sweden",
+    "Ukraine",
+    "United Kingdom",
+    "Region, n (%)",
+    "Eastern Europe",
+    "Northern Europe",
+    "Southern Europe",
+    "Western Europe",
+    "Education level, n (%)",
+    "(pre-) Primary education",
+    "Lower secondary education (e.g., middle school)",
+    "Upper secondary education (e.g., high school)",
+    "Post-secondary education",
+    "BMI, kg/m2, mean (SD)",
+    "Carlson Comorbidity Index, median [IQR]",
+    "Primary Kidney disease, n (%)",
+    "Diabetic kidney disease",
+    "Familial, hereditary nephropathies",
+    "Glomerular disease",
+    "Hypertension/Renal vascular disease",
+    "Miscellaneous and unknown renal disorders",
+    "Other systemic diseases affecting the kidneys",
+    "Tubulointerstitial disease",
+    "eGFR (mL/min per 1.73 m2), median [IQR]",
+    "Type of Vascular access, n (%)",
+    "AV fistula",
+    "AV graft",
+    "Catheter",
+    "Systolic blood pressure (mmHg), mean (SD)",
+    "Diastolic blood pressure (mmHg), mean (SD)",
+    "Ultrafiltration volume (mL), median [IQR]",
+    "First dialysis modality HDF, n (%)",
+    "Vascular access flow (mL/min), median [IQR]",
+    "C-reactive protein (mg/L), mean (SD)",
+    "Serum ferritin (), mean (SD)",
+    "Serum phosphate (), mean (SD)",
+    "Serum albumin (), mean (SD)",
+    "Serum sodium (), mean (SD)",
+    "Serum potassium (), mean (SD)",
+    "Residual urine volume (mL), median [IQR]",
+    "Serum hemoglobin (), mean (SD)",
+    "Serum bicarbonate (), mean (SD)",
+    "Serum creatinine (), median [IQR]",
+    "Weekly Kt/V, mean (SD)",
+    "Serum parathyroid hormone (), median [IQR]",
+    "Serum calcium (), mean (SD)",
+    "Serum HbA1c (), mean (SD)"
+  ))
+  
+kable(tab_one)
+
+#if you want missing % 
+dfSummary(baseline)
+
+```
