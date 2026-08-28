@@ -1,7 +1,7 @@
 #cohort derivation apollo 2 for target trial emulation
 #and covariates
 #code by S. Roos
-#last updated on 26-08-2026
+#last updated on 28-08-2026
 
 #0. set up----
 ##load packages----
@@ -34,8 +34,9 @@ walk(list.files(paste0(path, "funs_datacleaning/")), \(x)source(paste0(path, "fu
 #1.0 filter selection for cohort derivation
 #1.0 filter----
 #clean demograph, set everything to lower case and rename gfme_id to id
-demograph <- lowercase_and_rename_id(demograph) 
-save(demograph, file = paste0(path, "demograph.Rdata"))
+#demograph <- lowercase_and_rename_id(demograph) 
+#save(demograph, file = paste0(path, "demograph.Rdata"))
+
 #patient ID's that initiated dialysis from 2018 an onward
 #demograph contains 108,811 patients, after selecting after 2018, 61,560 remain
 recent_demograph <- demograph %>%
@@ -190,11 +191,6 @@ n_distinct(recent_data$id) #32,653 #1,923 removed
 #   filter(subgroup_later == 1)
 # n_distinct(subgroup_later$id) #17,615 patients
 
-
-#save inbetween
-save(recent_data, file = paste0(path, "recent_data.Rdata"))
-load(paste0(path, "recent_data.Rdata"))
-
 #2.0 datacleaning----
 recent_data <- recent_data %>%
   mutate(
@@ -260,11 +256,17 @@ event_select <- event_select%>%
 
 #we check first_hosp and see the minimum is 1
 #if it is NA we make it 0 because otherwise it gets imputed while we dont want it later on
+#in addition, we fill death date 
 event_select <- event_select %>%
   group_by(id) %>%
   mutate(
-    first_hosp = if_else(is.na(first_hosp), 0, first_hosp)
-  )
+    first_hosp = if_else(is.na(first_hosp), 0, first_hosp),
+    death_date = max(death_date, na.rm = TRUE),
+    death_date = if_else(is.infinite(death_date), NA, death_date) #if max returns infinite we set back to NA
+  )%>%
+  ungroup()
+
+
 
 #first remove all coh_icd10 text dots because reggex does not work well with "." in icd codes
 event_select <- event_select %>%
@@ -332,6 +334,10 @@ event_select <- event_select %>%
     )%>%
   ungroup()
 
+save(event_select, file = paste0(path, "event_select.Rdata"))
+load(paste0(path, "event_select.Rdata"))
+
+
 #we take only the last event for the mortality analysis
 #there can be 2 last event dates, in which cases there is a certain hierarchy to which event we want to keep for this analysis
 #discharge reasons are events that will occur before dying/competing events.
@@ -362,10 +368,6 @@ events_mortality_analysis <- event_select %>%
   ungroup()
 
 combined_mortality_event <- left_join(recent_data, events_mortality_analysis, by = "id")
-
-#save in between
-save(combined_mortality_event, file = paste0(path, "combined_mortality_event.Rdata"))
-load(paste0(path, "combined_mortality_event.Rdata"))
 
 #NOTE: those without an event now still have NA for events, set to 0!!
 combined_mortality_event <- combined_mortality_event %>%
@@ -404,7 +406,6 @@ combined_mortality_event <- combined_mortality_event %>%
   )%>%
   select(-demo_age_fdd)
 
-
-
-#save in between
+#save
 save(combined_mortality_event, file = paste0(path, "combined_mortality_event.Rdata"))
+load(paste0(path, "combined_mortality_event.Rdata"))
