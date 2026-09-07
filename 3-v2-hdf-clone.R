@@ -354,6 +354,10 @@ hist(summary_adherent$perc_hd_after)
 
 #4.0 bring down to observation row per 2 week period for grace period----
 #for afterwards, we keep variables for each year
+visit_0 <- cohort_hdf %>%
+  group_by(id) %>%
+  filter(mut_number == 1)
+
 grace_cohort <- cohort_hdf %>%
   filter(days_from_fdd <= 90 & days_from_fdd <= cens_time) %>%
   mutate(two_week_period = case_when(
@@ -365,10 +369,6 @@ grace_cohort <- cohort_hdf %>%
     days_from_fdd <= 84 ~ 6,
     days_from_fdd <= 90 ~ 7
   ))
-
-visit_0 <- grace_cohort %>%
-  group_by(id) %>%
-  filter(mut_number == 1)
 
 #define the variables we are interested in for IPCW and baseline
 var_to_fill <- c("txt_dry_weight", 
@@ -573,6 +573,8 @@ mutate(
   year_period = 0
 ) %>%
   ungroup()
+
+save(visit_0, file = paste0(path, "visit_0_hdf.Rdata"))
 
 #add visit 0
 cohort_hdf_incl_baseline <- bind_rows(visit_0, cohort_hdf_reduced) %>%
