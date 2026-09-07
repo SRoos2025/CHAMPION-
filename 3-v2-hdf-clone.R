@@ -1,7 +1,7 @@
 #3-v2 hdf clone
 #determine censor time and reason for HDF clone
 #go back to observations per two week period and every year afterwards
-#last updated 28-08-2026
+#last updated 07-09-2026
 #0. set up----
 ##load packages----
 pacman::p_load( "rio", #load data
@@ -184,7 +184,7 @@ cohort_hdf <- cohort_hdf %>%
       #and it is administrative loss to follow-up unknown
       (is.na(first_hdf) | first_hdf_day > 90) & cens_time <90 & (cens_time == last_treatment | 
                                                                    cens_time == last_lab 
-                                                                         | cens_time == last_comorb) ~ "admin",
+                                                                         | cens_time == last_comorb | cens_time == admin_censor_time) ~ "admin",
       .default = NA)
   ) %>%
   ungroup()
@@ -224,7 +224,7 @@ cohort_hdf <- cohort_hdf %>%
       #and it is administrative loss to follow-up unknown
       !is.na(first_hdf) & first_hdf_day <= 90 & 
         (cens_reason != "non-adherence" | is.na(cens_reason)) &
-        (cens_time == last_treatment | cens_time == last_lab | cens_time == last_comorb) ~ "admin",
+        (cens_time == last_treatment | cens_time == last_lab | cens_time == last_comorb  | cens_time == admin_censor_time) ~ "admin",
       .default = cens_reason
     )
   ) %>%
@@ -297,6 +297,8 @@ save(cohort_hdf, file = paste0(path, "cohort_hdf.Rdata"))
 #load 
 load(paste0(path, "cohort_hdf.Rdata"))
 
+
+
 #3.0 descriptive analyses----
 
 cohort_hdf <- cohort_hdf %>%
@@ -364,6 +366,10 @@ grace_cohort <- cohort_hdf %>%
     days_from_fdd <= 90 ~ 7
   ))
 
+visit_0 <- grace_cohort %>%
+  group_by(id) %>%
+  filter(mut_number == 1)
+
 #define the variables we are interested in for IPCW and baseline
 var_to_fill <- c("txt_dry_weight", 
                  "txt_ktv_ocm", "txt_pre_sbp", "txt_pre_weight", "txt_post_weight", "txt_time_eff", 
@@ -409,11 +415,18 @@ grace_cohort <- grace_cohort %>%
   group_by(id) %>%
   mutate(
     days_from_fdd = case_when(
-      two_week_period == 7 & days_from_fdd >90~ 90, # and the last should be max 90
       is.na(days_from_fdd) ~ two_week_period *14,
       .default = days_from_fdd
-    ) 
-  ) %>%
+  )) %>%
+  ungroup()
+
+grace_cohort <- grace_cohort %>%
+  group_by(id) %>%
+  mutate(
+    days_from_fdd = case_when(
+      two_week_period == 7 & days_from_fdd >90~ 90, # and the last should be max 90
+      .default = days_from_fdd
+    )) %>%
   ungroup()
 
 #save in between
@@ -426,13 +439,13 @@ year_cohort <- cohort_hdf %>%
   filter(days_from_fdd >90 & days_from_fdd <= cens_time) %>%
   mutate(
     year_period = case_when(
-      days_from_fdd >= 90 & days_from_fdd <= 360 ~ 1,
-      days_from_fdd > 360 & days_from_fdd <= 720 ~ 2,
-      days_from_fdd > 720 & days_from_fdd <= 1080 ~ 3,
-      days_from_fdd > 1080 & days_from_fdd <= 1440 ~ 4,
-      days_from_fdd > 1440 & days_from_fdd <= 1800 ~ 5,
-      days_from_fdd > 1800 & days_from_fdd <= 2160 ~ 6,
-      days_from_fdd > 2160 & days_from_fdd <= 2520 ~ 7
+      days_from_fdd >= 346 & days_from_fdd <= 360 ~ 1,
+      days_from_fdd > 706 & days_from_fdd <= 720 ~ 2,
+      days_from_fdd > 1066 & days_from_fdd <= 1080 ~ 3,
+      days_from_fdd > 1426 & days_from_fdd <= 1440 ~ 4,
+      days_from_fdd > 1786 & days_from_fdd <= 1800 ~ 5,
+      days_from_fdd > 2146 & days_from_fdd <= 2160 ~ 6,
+      days_from_fdd > 2506 & days_from_fdd <= 2520 ~ 7
     )
   )
 #define last day of the year for all times
@@ -456,6 +469,11 @@ year_cohort <- year_cohort %>%
   select(-period_end_day, -dist_to_end) %>%
   ungroup()
 
+#note that within grace period, there will be no NA's because we filtered <90 and everyone has some data there
+#filter only non missing year periods
+year_cohort <- year_cohort %>%
+  filter(!is.na(year_period))
+
 #create database with all two week periods 
 year_all <- expand.grid(
   id = unique(year_cohort[["id"]]),
@@ -463,7 +481,7 @@ year_all <- expand.grid(
 ) %>%
   arrange(id, year_period)
 
-#combine with grace lab
+#combine with grace cohort
 year_cohort <- left_join(year_all, year_cohort, by = c("id", "year_period"))%>%
   arrange(id, year_period)
 
@@ -472,8 +490,18 @@ year_cohort <- year_cohort %>%
   group_by(id) %>%
   mutate(
     days_from_fdd = case_when(
-      year_period == 7 & days_from_fdd >2520~ 2520,
       is.na(days_from_fdd) ~ year_period *360,
+      # and the last should be max 2520
+      .default = days_from_fdd
+    ) 
+  ) %>%
+  ungroup()
+
+year_cohort <- year_cohort %>%
+  group_by(id) %>%
+  mutate(
+    days_from_fdd = case_when(
+      year_period == 7 & days_from_fdd >2520~ 2520,
       # and the last should be max 2520
       .default = days_from_fdd
     ) 
@@ -517,16 +545,69 @@ cohort_hdf_reduced <- bind_rows(grace_cohort, year_cohort) %>%
        demo_male, subgroup_zero, cens_time, subgroup_later, demo_race, country, age_cat, cci, treatment_clone, last_observed_date, first_hdf_day, education, .direction= "downup")%>%
   ungroup()
 
+#make visit variable
+cohort_hdf_reduced <- cohort_hdf_reduced %>%
+  mutate(
+    visit = 
+      case_when(
+        two_week_period == 1 ~ 1,
+        two_week_period == 2 ~ 2,
+        two_week_period == 3 ~ 3,
+        two_week_period == 4 ~ 4,
+        two_week_period == 5 ~ 5,
+        two_week_period == 6 ~ 6,
+        two_week_period == 7 ~ 7,
+        year_period == 1 ~ 8,
+        year_period == 2 ~ 9,
+        year_period == 3 ~ 10,
+        year_period == 4 ~ 11,
+        year_period == 5 ~ 12,
+        year_period == 6 ~ 13
+      )
+  ) %>%
+  relocate(visit, .before = two_week_period)
+
+visit_0 <- visit_0 %>%
+mutate(
+  visit = 0,
+  year_period = 0
+) %>%
+  ungroup()
+
+#add visit 0
+cohort_hdf_incl_baseline <- bind_rows(visit_0, cohort_hdf_reduced) %>%
+  arrange(id, visit) %>%
+  relocate(id, .before = days_from_fdd) %>%
+  relocate(visit, .before = facility_id)
+
+#if we have the first data of this person, say at day 10
+#and their max observation within first two week period is also day 10
+#visit 0 is now the same as visit 1
+#now remove the visit 0 if days_from_fdd == days from fdd at visit 1
+#later after imputation, we will duplicate visit 1 to become visit 0 in those instances
+#(because we do not want baseline to be imputed differently than day 10 because day 10 is their baseline in that case)
+cohort_hdf_incl_baseline <- cohort_hdf_incl_baseline %>%
+  group_by(id) %>%
+  mutate(
+    remove = if_else(visit == 0 & 
+                       days_from_fdd == days_from_fdd[visit == 1], 1, 0)
+  ) %>%
+  ungroup()%>%
+  filter(remove != 1)
+
 
 # keep relevant column names
 #include specifiers for subgroup analyses (as defined in script 0: subgroup_later, subgroup_zero
 #for now we do nothing with comorbidity as outcome, but we do include hospitalization and all cause hospitalization
-cohort_hdf_reduced <- cohort_hdf_reduced %>%
-  select(id, two_week_period, year_period,  all_of(var_to_fill), facility_id, txt_per_week, days_from_fdd,
+#rename back to cohort hdf reduced
+cohort_hdf_reduced <- cohort_hdf_incl_baseline %>%
+  group_by(id) %>%
+  select(id, two_week_period, year_period,  all_of(var_to_fill), facility_id, txt_per_week, days_from_fdd, visit,
          first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
          infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day,  demo_esrd_cause_icd10text, demo_height,
          country, age_cat, demo_male, days_from_fdd, treatment_clone, cens_time, cens_reason, 
-         death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education, txt_access_flow)
+         death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education, txt_access_flow) %>%
+  fill(death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, .direction = "downup") #as we add empty rows fill death reason again
 
 #save in between
 save(cohort_hdf_reduced, file = paste0(path, "cohort_hdf_reduced.Rdata"))
