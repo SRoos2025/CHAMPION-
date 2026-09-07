@@ -519,23 +519,23 @@ cohort_hdf_reduced <- bind_rows(grace_cohort, year_cohort) %>%
     year_period = if_else(is.na(year_period), 0, year_period),
     #fill cens_time again
     cens_time = max(cens_time, na.rm = TRUE),
-    max_year_period = case_when(
-      cens_time <= 90   ~ 0,
-      cens_time <= 360  ~ 1,
-      cens_time <= 720  ~ 2,
-      cens_time <= 1080 ~ 3,
-      cens_time <= 1440 ~ 4,
-      cens_time <= 1800 ~ 5,
-      cens_time >1800 & cens_time <= 1826 ~ 6), #can be max 1826
-    max_two_week_period = case_when(
+      max_two_week_period = case_when(
       cens_time <= 14 ~ 1,
-      cens_time <= 28 ~ 2,
-      cens_time <= 42 ~ 3,
-      cens_time <= 56 ~ 4,
-      cens_time <= 70 ~ 5,
-      cens_time <= 84 ~ 6,
-      cens_time <= 90 ~ 7,
-      .default = 7),
+      cens_time >28 & cens_time < 42 ~ 2,
+      cens_time >= 42 & cens_time < 56 ~ 3,
+      cens_time >= 56 & cens_time < 70 ~ 4,
+      cens_time >= 70 & cens_time < 84 ~5,
+      cens_time >= 84 & cens_time < 90 ~6,
+      cens_time >= 90 ~7
+    ),
+    max_year_period = case_when(
+      cens_time <= 90 ~0,
+      cens_time < 360 & cens_time > 90 ~ 0,
+      cens_time >= 360 & cens_time < 720 ~1,
+      cens_time >= 720 & cens_time <1080 ~ 2,
+      cens_time >= 1080 & cens_time < 1440 ~3,
+      cens_time >= 1440 & cens_time < 1800 ~4,
+      cens_time >= 1800 ~5),
     days_from_fdd = if_else(year_period == 6 & days_from_fdd >= 1826, 1826, days_from_fdd), #max days from fdd can also be 1826, as is the censor time but we added extra rows with period 6
   ) %>%
   filter((year_period == 0 | year_period <= max_year_period) & (two_week_period == 0  | two_week_period <= max_two_week_period)) %>% #filter out empty rows of year periods after censor time
