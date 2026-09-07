@@ -1,7 +1,7 @@
 #4-hdf-labdata-ccw
 #reduce lab observations to every two week period and year period after and before censoring time of HDF
 #add this to hdf_reduced dataset created in script 3-v2-hdf clone
-#last updated on 28-08-2026 by Sanne Roos 
+#last updated on 07-09-2026 by Sanne Roos 
 
 #0. set up----
 ##load packages----
@@ -24,13 +24,15 @@ walk(list.files(paste0(path, "funs_datacleaning/")), \(x)source(paste0(path, "fu
 #load censor times as defined later in scripts HD and HDF clone respectively
 #so when running this chronologically from the beginning, continue now with script 2-v2-comorbid derivation
 load(paste0(path, "cens_time_hdf.Rdata"))
-
+#load labdata from patients from our cohort
 load(paste0(path, "recent_lab_data.Rdata"))
+
+#load first visit from dialysis data
+load(paste0(path, "visit_0_hdf.Rdata"))
 
 #1.0 add laboratory to mortality events created in script 0----
 #we want to try to apply 2 weights, one for the grace period, with 2 week periods up to 90 days
 #the other weight is for informative censoring afterwards due to competing events. 
-#These weights will be every 3 months up until 40 months(max observed time)
 
 #lab for HDF----
 #first define censor time for hdf (3-v2-hdf_clone) #we created cens_time_hdf
@@ -54,12 +56,42 @@ grace_lab <- recent_lab_data_hdf %>%
       days_from_fdd <= 90 ~ 7
     ))
 
+#for baseline we also want to check if they have lab on baseline day
+baseline_lab <- grace_lab %>%
+  group_by(id) %>%
+  mutate(mut_number = row_number()) %>% #define first row number for every patient
+  ungroup()%>%
+  filter(mut_number == 1) %>% #filter for first observation within lab
+  mutate(lab_day = days_from_fdd, #define date for lab measurement, this is just to visually check everything later on
+         #note that when we combine later with dialysis data, these days_from_fdd are leading
+         lab_id = 1)%>% #add identifier that this row is from lab data 
+  relocate(lab_day, .before = lab_albumin) #for visual inspection relocate column to the left
+
+#combine baseline lab data with baseline data from dialysis to check if it matches or is before the first dialysis measurements
+baseline <- bind_rows(baseline_lab, visit_0) %>%
+  arrange(id, days_from_fdd)%>%
+  group_by(id) %>%
+  mutate(
+    dialysis_day = if_else(is.na(lab_day), days_from_fdd, NA))%>% #for dialysis sessions, lab_day is NA
+  fill(dialysis_day, lab_day,  .direction = "downup") %>% #fill so no NA's are left
+  mutate(
+  remove = if_else(lab_day > dialysis_day, 1, 0) #we only want to keep lab data at baseline if it is before dialysis data at baseline, so remove if it is after
+  )
 
 #define the lab values we are interested in for IPCW and baseline
 labs <- c( "lab_crp",  "lab_ferritin", 
            "lab_phosph", "lab_prealbumin", "lab_serum_na", "lab_potassium",
            "lab_urine_volume", "lab_hgb", "lab_bicarb", "lab_creatinine", "lab_wktv",
-           "lab_pth", "lab_calcium", "lab_hgba1c")
+           "lab_pth", "lab_calcium", "lab_hgba1c") 
+
+visit_0_lab_hdf <- baseline %>%
+  filter(lab_id == 1 & remove == 0) %>% #keep lab observations, keep those where labday > dialysis day
+  select(id, lab_day, all_of(labs)) %>%
+  mutate(
+   visit = 0 #define visit, in this case baseline so 0
+  )
+
+save(visit_0_lab_hdf, file = paste0(path, "visit_0_lab_hdf"))
 
 #per period, sort by closest to period end for each 2 weeks
 #this way, we can later fill lab values forward from earlier rows if missing on closest row
@@ -102,8 +134,18 @@ grace_lab <- grace_lab %>%
   group_by(id) %>%
   mutate(
     days_from_fdd = case_when(
-      two_week_period == 7 & days_from_fdd >90~ 90,
       is.na(days_from_fdd) ~ two_week_period *14,
+      # and the last should be max 90
+      .default = days_from_fdd
+    ) 
+  ) %>%
+  ungroup()
+
+grace_lab <- grace_lab %>%
+  group_by(id) %>%
+  mutate(
+    days_from_fdd = case_when(
+      two_week_period == 7 & days_from_fdd >90~ 90,
       # and the last should be max 90
       .default = days_from_fdd
     ) 
@@ -112,20 +154,22 @@ grace_lab <- grace_lab %>%
 
 #we do the same for the variables for after the grace period
 # in which case, we want to weight each year.
+#note that also for weighting for the year, we want to carry observations forward if they were within 14 days up to period end
 year_lab <- recent_lab_data_hdf %>%
   group_by(id)%>%
   filter(days_from_fdd >90 & days_from_fdd <= cens_time) %>%
   mutate(
-    year_period = case_when(
-      days_from_fdd > 90 & days_from_fdd <= 360 ~ 1,
-      days_from_fdd >360 & days_from_fdd <= 720 ~ 2,
-      days_from_fdd > 720 & days_from_fdd <= 1080 ~ 3,
-      days_from_fdd > 1080 & days_from_fdd <= 1440 ~ 4,
-      days_from_fdd > 1440 & days_from_fdd <= 1800 ~ 5,
-      days_from_fdd > 1800 & days_from_fdd <= 2160 ~ 6,
-      days_from_fdd > 2160 & days_from_fdd <= 2520 ~ 7
-    )
+  year_period = case_when(
+    days_from_fdd >= 346 & days_from_fdd <= 360 ~ 1,
+    days_from_fdd > 706 & days_from_fdd <= 720 ~ 2,
+    days_from_fdd > 1066 & days_from_fdd <= 1080 ~ 3,
+    days_from_fdd > 1426 & days_from_fdd <= 1440 ~ 4,
+    days_from_fdd > 1786 & days_from_fdd <= 1800 ~ 5,
+    days_from_fdd > 2146 & days_from_fdd <= 2160 ~ 6,
+    days_from_fdd > 2506 & days_from_fdd <= 2520 ~ 7
   )
+) %>%
+  ungroup()
 
 period_year_end <- c(360, 720, 1080, 1440, 1800, 2160, 2520)
 
@@ -162,13 +206,24 @@ year_lab <- left_join(year_all, year_lab, by = c("id", "year_period"))%>%
 year_lab <- year_lab %>%
   group_by(id) %>%
   mutate(
-    days_from_fdd = case_when(
-      year_period == 7 & days_from_fdd >2520~ 2520, # and the last should be max 2520
+    days_from_fdd = case_when( # and the last should be max 2520
       is.na(days_from_fdd) ~ year_period *360,
       .default = days_from_fdd
     ) 
   ) %>%
   ungroup()
+
+year_lab <- year_lab %>%
+  group_by(id) %>%
+  mutate(
+    days_from_fdd = case_when( # and the last should be max 2520
+      year_period == 7 & days_from_fdd >2520~ 2520,
+      .default = days_from_fdd
+    ) 
+  ) %>%
+  ungroup()
+
+
 
 recent_lab_data_hdf <- bind_rows(grace_lab, year_lab) %>%
   arrange(id, two_week_period, year_period) %>%
@@ -179,34 +234,76 @@ recent_lab_data_hdf <- bind_rows(grace_lab, year_lab) %>%
   )
 
 recent_lab_data_hdf <- recent_lab_data_hdf %>%
-  select(id, days_from_fdd, cens_time,  two_week_period, year_period, all_of(labs),last_lab )
-
-recent_lab_data_hdf <- recent_lab_data_hdf %>%
   group_by(id) %>%
   mutate(
-    max_year_period = case_when(
-      cens_time <= 90   ~ 0,
-      cens_time <= 360  ~ 1,
-      cens_time <= 720  ~ 2,
-      cens_time <= 1080 ~ 3,
-      cens_time <= 1440 ~ 4,
-      cens_time <= 1800 ~ 5,
-      cens_time >1800 & cens_time <= 1826 ~ 6), #can be max 1826
+    cens_time = max(cens_time, na.rm = TRUE),
     max_two_week_period = case_when(
       cens_time <= 14 ~ 1,
-      cens_time <= 28 ~ 2,
-      cens_time <= 42 ~ 3,
-      cens_time <= 56 ~ 4,
-      cens_time <= 70 ~ 5,
-      cens_time <= 84 ~ 6,
-      cens_time <= 90 ~ 7,
-      .default = 7),
+      cens_time >28 & cens_time < 42 ~ 2,
+      cens_time >= 42 & cens_time < 56 ~ 3,
+      cens_time >= 56 & cens_time < 70 ~ 4,
+      cens_time >= 70 & cens_time < 84 ~5,
+      cens_time >= 84 & cens_time < 90 ~6,
+      cens_time >= 90 ~7
+    ),
+    max_year_period = case_when(
+      cens_time <= 90 ~0,
+      cens_time < 360 & cens_time > 90 ~ 0,
+      cens_time >= 360 & cens_time < 720 ~1,
+      cens_time >= 720 & cens_time <1080 ~ 2,
+      cens_time >= 1080 & cens_time < 1440 ~3,
+      cens_time >= 1440 & cens_time < 1800 ~4,
+      cens_time >= 1800 ~5
+    ),
     days_from_fdd = if_else(year_period == 6 & days_from_fdd >= 1826, 1826, days_from_fdd), #max days from fdd can also be 1826, as is the censor time but we added extra rows with period 6
   ) %>%
   #year period is all 0 in the two week period, and viceverse
   filter((year_period == 0 | year_period <= max_year_period) & (two_week_period == 0  | two_week_period <= max_two_week_period)) %>%
   select(-cens_time)%>%
   ungroup()
+
+recent_lab_data_hdf <- recent_lab_data_hdf %>%
+  mutate(
+    visit = 
+      case_when(
+        two_week_period == 1 ~ 1,
+        two_week_period == 2 ~ 2,
+        two_week_period == 3 ~ 3,
+        two_week_period == 4 ~ 4,
+        two_week_period == 5 ~ 5,
+        two_week_period == 6 ~ 6,
+        two_week_period == 7 ~ 7,
+        year_period == 1 ~ 8,
+        year_period == 2 ~ 9,
+        year_period == 3 ~ 10,
+        year_period == 4 ~ 11,
+        year_period == 5 ~ 12,
+        year_period == 6 ~ 13
+      )
+  ) %>%
+  relocate(visit, .before = two_week_period) #for visual inspection relocate column
+
+#add baseline lab data to all labdata as created for the weighting per period
+recent_lab_data_hdf_base <- bind_rows(recent_lab_data_hdf, visit_0_lab_hdf) %>%
+  arrange(id, visit) %>%
+  mutate(days_from_fdd = if_else(is.na(days_from_fdd), lab_day, days_from_fdd)) #rename days from fdd to lab day so we can know the difference later when leftjoining with diaysis data 
+
+#rename to recent lab data hdf as it is not only baseline anymore
+#here, we want to only keep visit 0 if days from fdd is not exactly the same as visit 1, similarl as in script 3
+#ifelse does not work because we need vector with same length for people who do not have visit 1
+#therefore, we work with this structure below
+recent_lab_data_hdf <- recent_lab_data_hdf_base %>%
+  group_by(id) %>%
+  mutate(
+    days_fdd_visit1 = if (any(visit == 1)) days_from_fdd[visit == 1][1] else NA,
+    remove = case_when(
+      visit == 0 & !is.na(days_fdd_visit1) & days_from_fdd == days_fdd_visit1 ~ 1,
+      .default= 0
+    )
+  ) %>%
+  ungroup() %>%
+  select(-days_fdd_visit1) %>%
+  filter(remove != 1)
 
 #save in between
 save(recent_lab_data_hdf, file = paste0(path, "recent_lab_data_hdf.Rdata"))
