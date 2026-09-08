@@ -1,7 +1,7 @@
 #4-hdf-labdata-ccw
 #reduce lab observations to every two week period and year period after and before censoring time of HDF
 #add this to hdf_reduced dataset created in script 3-v2-hdf clone
-#last updated on 07-09-2026 by Sanne Roos 
+#last updated on 08-09-2026 by Sanne Roos 
 
 #0. set up----
 ##load packages----
@@ -157,7 +157,7 @@ grace_lab <- grace_lab %>%
 #note that also for weighting for the year, we want to carry observations forward if they were within 14 days up to period end
 year_lab <- recent_lab_data_hdf %>%
   group_by(id)%>%
-  filter(days_from_fdd >90 & days_from_fdd <= cens_time) %>%
+  filter(days_from_fdd >90 & days_from_fdd <= cens_time & cens_time >= 360) %>%
   mutate(
   year_period = case_when(
     days_from_fdd >= 346 & days_from_fdd <= 360 ~ 1,
@@ -190,6 +190,11 @@ year_lab <- year_lab %>%
   slice_head(n=1) %>%
   select(-period_end_day, -dist_to_end) %>%
   ungroup()
+
+#note that within grace lab period, there will be no NA's because we filtered <90 and everyone has some data there
+#filter only non missing year periods
+year_lab <- year_lab %>%
+  filter(!is.na(year_period))
 
 #create database with all two week periods 
 year_all <- expand.grid(
@@ -238,8 +243,9 @@ recent_lab_data_hdf <- recent_lab_data_hdf %>%
   mutate(
     cens_time = max(cens_time, na.rm = TRUE),
     max_two_week_period = case_when(
-      cens_time <= 14 ~ 1,
-      cens_time >28 & cens_time < 42 ~ 2,
+      cens_time < 14 ~ 0,
+      cens_time >=14 & cens_time < 28 ~ 1,
+      cens_time >=28 & cens_time < 42 ~ 2,
       cens_time >= 42 & cens_time < 56 ~ 3,
       cens_time >= 56 & cens_time < 70 ~ 4,
       cens_time >= 70 & cens_time < 84 ~5,
@@ -253,8 +259,7 @@ recent_lab_data_hdf <- recent_lab_data_hdf %>%
       cens_time >= 720 & cens_time <1080 ~ 2,
       cens_time >= 1080 & cens_time < 1440 ~3,
       cens_time >= 1440 & cens_time < 1800 ~4,
-      cens_time >= 1800 ~5
-    ),
+      cens_time >= 1800 ~5),
     days_from_fdd = if_else(year_period == 6 & days_from_fdd >= 1826, 1826, days_from_fdd), #max days from fdd can also be 1826, as is the censor time but we added extra rows with period 6
   ) %>%
   #year period is all 0 in the two week period, and viceverse
