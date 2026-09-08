@@ -1,7 +1,7 @@
 #3-v2 hdf clone
 #determine censor time and reason for HDF clone
 #go back to observations per two week period and every year afterwards
-#last updated 07-09-2026
+#last updated 08-09-2026
 #0. set up----
 ##load packages----
 pacman::p_load( "rio", #load data
@@ -436,7 +436,7 @@ load(paste0(path, "grace_cohort.Rdata"))
 
 
 year_cohort <- cohort_hdf %>%
-  filter(days_from_fdd >90 & days_from_fdd <= cens_time) %>%
+  filter(days_from_fdd >90 & days_from_fdd <= cens_time  & cens_time >= 360) %>%
   mutate(
     year_period = case_when(
       days_from_fdd >= 346 & days_from_fdd <= 360 ~ 1,
@@ -510,6 +510,8 @@ year_cohort <- year_cohort %>%
 
 #rename cohort_hdf so you also keep a database with all treatment mutations for descriptive purposes
 #because in this chunk of code, we reduce to yearly and 2 week periods so not all treatment observations remain
+#note not everyone will still be in there after this step, if they get lost before day 14
+#later we add their baseline back in that case
 cohort_hdf_reduced <- bind_rows(grace_cohort, year_cohort) %>%
   arrange(id, two_week_period, year_period)%>%
   group_by(id) %>%
@@ -519,9 +521,10 @@ cohort_hdf_reduced <- bind_rows(grace_cohort, year_cohort) %>%
     year_period = if_else(is.na(year_period), 0, year_period),
     #fill cens_time again
     cens_time = max(cens_time, na.rm = TRUE),
-      max_two_week_period = case_when(
-      cens_time <= 14 ~ 1,
-      cens_time >28 & cens_time < 42 ~ 2,
+    max_two_week_period = case_when(
+      cens_time < 14 ~ 0,
+      cens_time >=14 & cens_time < 28 ~ 1,
+      cens_time >=28 & cens_time < 42 ~ 2,
       cens_time >= 42 & cens_time < 56 ~ 3,
       cens_time >= 56 & cens_time < 70 ~ 4,
       cens_time >= 70 & cens_time < 84 ~5,
@@ -542,7 +545,7 @@ cohort_hdf_reduced <- bind_rows(grace_cohort, year_cohort) %>%
   #fill cens_reason again
   fill(cens_reason, facility_id, death_date, first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
        infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day, demo_esrd_cause_icd10text, demo_height,
-       demo_male, subgroup_zero, cens_time, subgroup_later, demo_race, country, age_cat, cci, treatment_clone, last_observed_date, first_hdf_day, education, .direction= "downup")%>%
+       demo_male, death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, subgroup_zero, cens_time, subgroup_later, demo_race, country, age_cat, cci, treatment_clone, last_observed_date, first_hdf_day, education, .direction= "downup")%>%
   ungroup()
 
 #make visit variable
@@ -577,6 +580,7 @@ mutate(
 save(visit_0, file = paste0(path, "visit_0_hdf.Rdata"))
 
 #add visit 0
+#now we have 32653 partiipants again
 cohort_hdf_incl_baseline <- bind_rows(visit_0, cohort_hdf_reduced) %>%
   arrange(id, visit) %>%
   relocate(id, .before = days_from_fdd) %>%
@@ -591,9 +595,11 @@ cohort_hdf_incl_baseline <- bind_rows(visit_0, cohort_hdf_reduced) %>%
 cohort_hdf_incl_baseline <- cohort_hdf_incl_baseline %>%
   group_by(id) %>%
   mutate(
-    remove = if_else(visit == 0 & 
-                       days_from_fdd == days_from_fdd[visit == 1], 1, 0)
-  ) %>%
+    days_fdd_visit1 = if (any(visit == 1)) days_from_fdd[visit == 1][1] else NA,
+    remove = case_when(
+      visit == 0 & !is.na(days_fdd_visit1) & days_from_fdd == days_fdd_visit1 ~ 1,
+      .default= 0
+    )) %>%
   ungroup()%>%
   filter(remove != 1)
 
@@ -603,13 +609,12 @@ cohort_hdf_incl_baseline <- cohort_hdf_incl_baseline %>%
 #for now we do nothing with comorbidity as outcome, but we do include hospitalization and all cause hospitalization
 #rename back to cohort hdf reduced
 cohort_hdf_reduced <- cohort_hdf_incl_baseline %>%
-  group_by(id) %>%
-  select(id, two_week_period, year_period,  all_of(var_to_fill), facility_id, txt_per_week, days_from_fdd, visit,
+  select(id, visit, days_from_fdd, all_of(var_to_fill), facility_id, txt_per_week, 
          first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
          infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day,  demo_esrd_cause_icd10text, demo_height,
          country, age_cat, demo_male, days_from_fdd, treatment_clone, cens_time, cens_reason, 
-         death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education, txt_access_flow) %>%
-  fill(death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, .direction = "downup") #as we add empty rows fill death reason again
+         death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education, txt_access_flow)%>%
+  ungroup()
 
 #save in between
 save(cohort_hdf_reduced, file = paste0(path, "cohort_hdf_reduced.Rdata"))
