@@ -1,5 +1,6 @@
 #9-v2-complete-cohort-hd
 #goal is to combine dialysis data from script 3 for hd clone with lab data as created in script 8 for hd clone
+#last updated 08-09-2026
 
 #0. set up----
 ##load packages----
@@ -23,10 +24,23 @@ walk(list.files(paste0(path, "funs_datacleaning/")), \(x)source(paste0(path, "fu
 load(paste0(path, "recent_lab_data_hd.Rdata"))
 load(paste0(path, "cohort_hd_reduced.Rdata"))
 
+#for visual inspection
+cohort_hd_reduced <- cohort_hd_reduced %>%
+  relocate(days_from_fdd, visit, cens_time, .before = txt_dry_weight)
+
+#remove days from fdd as we have lab_day just to check which day from labdata, but days from fdd from dialysis data is leading
+#so it does not matter lab_day is missing for data rows from dialysis data 
+#from now on, only visits matter, so two week period and year period may also be removed
+recent_lab_data_hd <- recent_lab_data_hd %>%
+  mutate(lab_day = days_from_fdd) %>%
+  relocate(lab_day, .before = lab_crp) %>%
+  select(-c(days_from_fdd, two_week_period, year_period))
+
 #combine with lab data filtered per 2 week period
 #left join will match on id and on two week period or year period if possible,
 #if not it will add the row and fill the missing two week period of that missing datafrmae with NA
-cohort_hd_reduced <- left_join(cohort_hd_reduced, recent_lab_data_hd, by = c("id", "two_week_period", "year_period"))
+cohort_hd_reduced <- left_join(cohort_hd_reduced, recent_lab_data_hd, by = c("id", "visit")) %>%
+  relocate(lab_day, .before = txt_dry_weight)
 
 #save again
 save(cohort_hd_reduced, file = paste0(path, "cohort_hd_reduced.Rdata"))
