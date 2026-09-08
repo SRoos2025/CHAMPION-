@@ -1,6 +1,6 @@
 #10.0 add total hospitalization days hd
 #goal is to add total days of hospitalization BEFORE censoring takes place for HD clone
-
+#last updated 30-08-2026
 ##load packages----
 pacman::p_load( "rio", #load data
                 "purrr", #data untangling
