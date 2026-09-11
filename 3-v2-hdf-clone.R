@@ -374,7 +374,7 @@ grace_cohort <- cohort_hdf %>%
 var_to_fill <- c("txt_dry_weight", 
                  "txt_ktv_ocm", "txt_pre_sbp", "txt_pre_weight", "txt_post_weight", "txt_time_eff", 
                  "txt_pre_dbp", "txt_substitution_volume", "txt_ufv", "txt_idwg_kg", "modality", "txt_per_week",
-                 "catheter", "education", "txt_access_flow")
+                 "catheter", "education", "txt_qb_mean")
 
 
 #per period, sort by closest to period end for each 2 weeks
