@@ -80,9 +80,9 @@ baseline <- bind_rows(baseline_lab, visit_0) %>%
 
 #define the lab values we are interested in for IPCW and baseline
 labs <- c( "lab_crp",  "lab_ferritin", 
-           "lab_phosph", "lab_prealbumin", "lab_serum_na", "lab_potassium",
+           "lab_phosph", "lab_albumin", "lab_serum_na", "lab_potassium",
            "lab_urine_volume", "lab_hgb", "lab_bicarb", "lab_creatinine", "lab_wktv",
-           "lab_pth", "lab_calcium", "lab_hgba1c") 
+           "lab_pth", "lab_calcium", "lab_hgba1c", "lab_sars_cov_2_confirmed", "lab_urine_microalbuminaria") 
 
 visit_0_lab_hd <- baseline %>%
   filter(lab_id == 1 & remove == 0) %>% #keep lab observations, keep those where labday < dialysis day
