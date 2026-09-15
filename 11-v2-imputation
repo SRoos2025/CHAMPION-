@@ -353,4 +353,11 @@ dat_imputed_both_clones %<>%
   )%>%
   ungroup()
 
+dat_imputed_both_clones <- dat_imputed_both_clones %>%
+  group_by(id, treatment_clone) %>%
+  mutate(
+    remove = if_else(current_cens_time < 14 & visit == 1, 1, 0)
+  ) %>%
+  filter(remove != 1)
+
 save(dat_imputed_both_clones, file = paste0(path, "dat_imputed_both_clones.Rdata"))
