@@ -1,0 +1,346 @@
+#imputation of missing variables script
+#by S. Roos
+#last updated on 15-09-2026
+#note that we impute only one clone, with the longest follow-up. 
+#The only thing that should differ between the clones is censor time (cens_time) and censor reason (cens_reason)
+#so after imputation, we check clone specific follow-up and remove observations beyond there and we add specific censor time and reason.
+
+#0. set up----
+##load packages----
+pacman::p_load( "rio", #load data
+                "purrr", #data untangling
+                "magrittr", #untangle data
+                "dplyr", #untangle data
+                "tidyr", #untangle data
+                "mice", #for imputation
+                "miceadds", #for imputation
+                "summarytools", #to inspect variable summary of total dataset
+                "fastDummies")#to create dummy variables from categorical ones
+
+##set working directory----
+setwd("...")
+
+##define path to save any output to, and path import to import data
+path <- "..."
+path_import <- "..."
+
+#load functions
+walk(list.files(paste0(path, "funs/")), \(x)source(paste0(path, "funs/", x)))
+
+#load data with events and measurements of sessions including modality changes and their last event date relevant for mortality outcome
+load(paste0(path, "cohort_hdf_reduced.Rdata"))
+load(paste0(path, "cohort_hd_reduced.Rdata"))
+
+
+#1.0 chose clone with longest follow-up
+#check if colnames are exactly similar only order is different
+#TRUE
+setdiff(colnames(cohort_hdf_reduced), colnames(cohort_hd_reduced))
+
+var_to_fill <- c("txt_dry_weight", 
+                 "txt_ktv_ocm", "txt_pre_sbp", "txt_pre_weight", "txt_post_weight", "txt_time_eff", 
+                 "txt_pre_dbp", "txt_substitution_volume", "txt_ufv", "txt_idwg_kg", "modality", "txt_per_week",
+                 "catheter", "education", "txt_qb_mean")
+
+labs <- c( "lab_crp",  "lab_ferritin", 
+           "lab_phosph", "lab_albumin", "lab_serum_na", "lab_potassium",
+           "lab_urine_volume", "lab_hgb", "lab_bicarb", "lab_creatinine", "lab_wktv",
+           "lab_pth", "lab_calcium", "lab_hgba1c", "lab_sars_cov_2_confirmed", "lab_urine_microalbuminaria") 
+
+#accidentily all other labs are still in cohort hdf
+cohort_hdf_reduced <- cohort_hdf_reduced %>%
+  select(c(id, visit, days_from_fdd, lab_day, cens_time, cens_reason,  all_of(var_to_fill), all_of(labs), facility_id,
+                  first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
+                  infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day,  demo_esrd_cause_icd10text, demo_height,
+                  country, age_cat, demo_male, treatment_clone, total_hosp_days, mod_mis,
+                  death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, subgroup_zero, education))
+
+cohort_hd_reduced <- cohort_hd_reduced %>%
+  select(-c(last_lab, max_two_week_period, max_year_period, remove))
+
+#summary(cohort_hd_reduced)#shows death reason has been set to NA
+cohort_hd_reduced <- cohort_hd_reduced %>%
+  group_by(id)%>%
+  mutate(death_reason_cardiovasc = if_else(is.na(death_reason_cardiovasc), 0, death_reason_cardiovasc),
+         death_reason_infect_incl_covid = if_else(is.na(death_reason_infect_incl_covid), 0, death_reason_infect_incl_covid),
+         death_reason_infect_excl_covid = if_else(is.na(death_reason_infect_excl_covid), 0, death_reason_infect_excl_covid)
+  ) %>%
+  ungroup()
+
+#further note that data on hospitalizations (outside of total_hospdays) has been determined regardless of cens_time which we fix now
+cohort_hd_reduced <- cohort_hd_reduced %>%
+  group_by(id) %>%
+  mutate(
+    cardiac_hosp = if_else(cardiac_hosp_day >1826, 0, cardiac_hosp),
+    cardiovasc_hosp = if_else(cardiovasc_hosp_day >1826, 0, cardiovasc_hosp),
+    infect_hosp_incl_covid = if_else(infect_hosp_incl_covid_day >1826, 0, infect_hosp_incl_covid),
+    infect_hosp_excl_covid = if_else(infect_hosp_excl_covid_day >1826, 0, infect_hosp_excl_covid),
+    cardiac_hosp_day = if_else(cardiac_hosp == 0, 1826, cardiac_hosp_day),
+    cardiovasc_hosp_day = if_else(cardiovasc_hosp == 0, 1826, cardiovasc_hosp_day),
+    infect_hosp_excl_covid_day = if_else(infect_hosp_excl_covid == 0, 1826, infect_hosp_excl_covid_day),
+    infect_hosp_incl_covid_day = if_else(infect_hosp_incl_covid == 0, 1826, infect_hosp_incl_covid_day)
+  )
+
+cohort_hdf_reduced <- cohort_hdf_reduced %>%
+  group_by(id) %>%
+  mutate(
+  cardiac_hosp = if_else(cardiac_hosp_day >1826, 0, cardiac_hosp),
+cardiovasc_hosp = if_else(cardiovasc_hosp_day >1826, 0, cardiovasc_hosp),
+infect_hosp_incl_covid = if_else(infect_hosp_incl_covid_day >1826, 0, infect_hosp_incl_covid),
+infect_hosp_excl_covid = if_else(infect_hosp_excl_covid_day >1826, 0, infect_hosp_excl_covid),
+cardiac_hosp_day = if_else(cardiac_hosp == 0, 1826, cardiac_hosp_day),
+cardiovasc_hosp_day = if_else(cardiovasc_hosp == 0, 1826, cardiovasc_hosp_day),
+infect_hosp_excl_covid_day = if_else(infect_hosp_excl_covid == 0, 1826, infect_hosp_excl_covid_day),
+infect_hosp_incl_covid_day = if_else(infect_hosp_incl_covid == 0, 1826, infect_hosp_incl_covid_day)
+  )%>%
+  ungroup()
+
+summary(cohort_hdf_reduced)
+summary(cohort_hd_reduced)
+#create stacked dataset of both 
+#and make variable to note which one has longest follow-up
+stacked <- bind_rows(cohort_hd_reduced, cohort_hdf_reduced) %>%
+  arrange(id) %>%
+  group_by(id)%>%
+  mutate(
+    max_fu = max(cens_time), #determine max cens time irrespective of treatment clone
+    cens_time_hdf = if_else(treatment_clone == "hdf", cens_time, 0), #determine censor time specific for hdf strategy
+    cens_time_hd = if_else(treatment_clone == "hd", cens_time, 0),
+    #aggregate cens time hdf and hd
+    cens_time_hdf = max(cens_time_hdf),
+    cens_time_hd = max(cens_time_hd),
+    cens_reason_hd = if_else(treatment_clone == "hd", cens_reason, NA),
+    cens_reason_hdf = if_else(treatment_clone == "hdf", cens_reason, NA),
+    max_clone = if_else(max_fu == cens_time_hdf, "hdf", "hd"),
+    #first define what current clone is
+    long_clone = if_else(treatment_clone == max_clone, 1, 0) #note which clone corresponds to longest follow-up
+  )%>%
+  fill(cens_reason_hd, cens_reason_hdf, .direction = "downup")%>%
+  ungroup()
+
+#we want to keep the rows only of the clone with longest follow-up for imputation
+#in addition, we want to keep columns with specific data for both clones, in this case: cens_time & reason for both hdf and HD
+impute_longest <- stacked %>%
+  filter(long_clone == 1)
+
+# #check whether we have 1 uniuqe clone per id
+#  check <- impute_longest %>%
+#  group_by(id) %>%
+#  mutate(unique_id = paste0(id, "_", max_clone)) %>%
+#  ungroup()
+# # # 
+#  double <- check %>%
+#  group_by(id) %>%
+#  summarise(n_unique = n_distinct(unique_id)) %>%
+#  filter(n_unique == 2) %>%
+#  nrow() #returns 0 so everyone has unique id
+
+#check if we have the same amount of unique IDs as the original
+n_distinct(unique(impute_longest$id)) #32,653, which is correct
+
+
+impute_longest <- impute_longest %>%
+  #set death reasons to 0 if not applicable
+  mutate(
+    #set substitution volume to 0 if modality is 0 (HD)
+    txt_substitution_volume = if_else(modality == 0, 0, txt_substitution_volume),
+    #scale substition volume to improve numerical stability (from ml to L)
+    txt_substitution_volume = txt_substitution_volume / 1000
+  )
+
+#make dummy variables from catogorical catheter and age category and education
+impute_longest <- dummy_cols(impute_longest, select_columns = c("catheter", "age_cat", "education"))
+
+#rename agecategories as they are currently invalid colnames with tokens like >= 75 which do not work well within colname
+#explicitly make education missing in all categories if education_NA is 1
+impute_longest<- impute_longest %>%
+  mutate(
+    age_cat_seventyfive = `age_cat_>=75` , 
+    age_cat_sixtyfive= `age_cat_65-74` , 
+    age_cat_fourtyfive  = `age_cat_45-64`, 
+    age_cat_eighteen = `age_cat_18-44`,
+    education_0 = if_else(education_NA == 1, NA, education_0),
+    education_1 = if_else(education_NA ==1, NA, education_1),
+    education_2 = if_else(education_NA ==1, NA, education_2),
+    education_3 = if_else(education_NA ==1, NA, education_3)
+  )
+
+#2.0 define iputation variables 
+
+impute_longest <- impute_longest %>%
+  select(-c(cens_reason, cens_time, max_clone, long_clone, max_fu, education,
+            catheter_NA,                   `age_cat_>=75`,                  
+             ,`age_cat_18-44`,                  `age_cat_65-74`,                 
+            `age_cat_65-74`, `age_cat_45-64`, age_cat, education_NA, catheter_0,
+            txt_dry_weight, txt_pre_weight, txt_idwg_kg, catheter, txt_ktv_ocm, lab_day, demo_esrd_cause_icd10text, lab_sars_cov_2_confirmed,  lab_urine_microalbuminaria))
+
+#modality should be integer in stead of numeric 
+impute_longest <- impute_longest %>%
+  mutate(modality = as.integer(modality))
+
+#save 
+save(impute_longest, file = paste0(path, "impute_longest.Rdata"))
+
+#inspect missingness of some infrequent variables
+urine_volume <- impute_hdf %>%
+  group_by(id) %>%
+  summarise(has_nonmissing = any(!is.na(lab_urine_volume))) %>%
+  summarise(n_patients = sum(has_nonmissing))#2604 have any value 
+
+hbac <- impute_hdf %>%
+  group_by(id) %>%
+  summarise(has_nonmissing = any(!is.na(lab_hgba1c))) %>%
+  summarise(n_patients = sum(has_nonmissing))#6528 have any value 
+
+#set up predition matrix
+mat_prd <- mice(impute_longest, maxit =0)[["predictorMatrix"]] #6 logged Events
+
+mice <- mice(impute_longest, maxit = 0) 
+#mice$loggedEvents show event for constant censor reason, country, catheter, age category 
+#but we do not impute this so this should not give problems
+
+#define variables that do not have to be imputed
+#they do have to be used as preditors (ie their row should have 1s for preditors)
+vec_nimp <- c( #auxilliary variables
+  #identifier id
+  "id",
+  #time variable
+  "days_from_fdd",
+  "visit",
+  "mod_mis",
+  #cluster variables
+  "facility_id", 
+  #demographic variables
+  "age_cat_seventyfive", "age_cat_sixtyfive", "age_cat_fourtyfive", "age_cat_eighteen", 
+  "demo_male", "demo_height", 
+  #outcomes
+  "cens_time_hdf", "cens_time_hd",
+ "death_reason_cardiovasc", "death_reason_infect_incl_covid", 
+ "death_reason_infect_excl_covid", 
+ "cardiovasc_hosp", "cardiovasc_hosp_day",
+  "cardiac_hosp",  "cardiac_hosp_day", 
+ "infect_hosp_incl_covid","infect_hosp_incl_covid_day", 
+ "infect_hosp_excl_covid","infect_hosp_excl_covid_day",
+ "total_hosp_days", "first_hosp", 
+ #clinical values
+  "cci",
+ #subgroup indicators
+ "subgroup_zero", "subgroup_later",  "catheter_1", #demographic values
+ "education_0", "education_1", "education_2", "education_3"
+  )
+
+
+#define text variables
+text_vars <- c("cens_reason_hdf", "cens_reason_hd", "country", "treatment_clone")
+
+#define variables for longitudinal imputation
+#idea for next run,
+vec_limp <- c(
+  
+  #laboratory values
+  "lab_crp", "lab_ferritin", 
+  "lab_phosph", "lab_calcium",  
+  "lab_serum_na", "lab_potassium", 
+  "lab_hgb", "lab_bicarb", 
+  "lab_creatinine", "lab_pth",
+  "lab_albumin", "lab_hgba1c", 
+  "lab_urine_volume", 
+  #clinical values
+  "txt_pre_sbp", "lab_wktv", 
+  "txt_time_eff", "txt_post_weight", 
+  "txt_ufv",
+  "txt_substitution_volume","modality", 
+  "txt_per_week","txt_pre_dbp", "txt_qb_mean")
+
+#adjust predictor matrix, set rows to 0
+mat_prd[vec_nimp, ] <- 0
+
+#set cluster variable for the variables we want to impute
+mat_prd[vec_limp, "id"] <- -2
+
+# Get methods vector
+vec_mtd <- mice(impute_longest, maxit = 0)[["method"]]
+
+# Change variables to be longitudinally imputed to longitudinal imputation
+vec_mtd <- if_else(names(vec_mtd) %in% vec_limp, "2l.pmm", vec_mtd)
+
+vec_mtd[names(vec_mtd) %in% text_vars] <- ""
+
+# Reset names of methods vector
+names(vec_mtd) <- colnames(mat_prd)
+
+
+#we use the function run_imps which we have created. This way we run 10 imputations seperately.
+#if a imputation already exists, it continues with the next imputation. 
+#this way if you lose connection, it may save the finished imputations in between and you dont have to start over
+run_imps(data = impute_longest, path = path)
+
+
+#visually check so combine all imputations to one object
+#this acutally takes too long
+#combined_imp <- combine_imp_objects(path = path)
+#but plotting imps seperately and inspecting (plot(imp_1)) etc it seems the imputation went well
+ 
+ #convert to long format
+
+ #combine all into one dataset with selfmade function (make_implist)
+ #note we now have 1 imputed set of rows per individual, which is the longest
+ dat_imputed_all <- make_implist(path = path)
+ 
+ 
+ save(dat_imputed_all, file = paste0(path, "dat_imputed_all.Rdata"))
+ load(paste0(path, "dat_imputed_all.Rdata"))
+
+#inspect example 
+ imp_1<- dat_imputed_all %>%
+        filter(.imp == 1) #filter first imputation for example purpose
+ 
+#first thing is some do not have visit 0
+dat_imputed_all <- dat_imputed_all %>%
+   group_by(id) %>%
+   mutate(
+     mut_number = row_number(),
+     baseline_pres = if_else(mut_number == 1 & visit == 0, 1, 0), #if first row is visit 0, baseline is present
+     baseline_pres = max(baseline_pres)
+   ) %>%
+   ungroup()
+ 
+ #filter visit 1 from those who do not have baseline (n = 2747)
+ #set the visit to 0, because we duplicate visit 1 to visit 0 (as this is also the baselindata we have from these persons)
+ no_baseline_first_visits <- dat_imputed_all %>%
+   filter(baseline_pres == 0 & visit == 1) %>%
+   mutate(visit = 0)
+
+ #add this back to the data
+dat_imputed_all <- bind_rows(dat_imputed_all, no_baseline_first_visits) %>%
+   arrange(id, visit, days_from_fdd)
+ 
+
+#remove imp 0
+dat_imputed_all %<>% filter(.imp != 0)
+
+save(dat_imputed_all, file = paste0(path, "dat_imputed_all.Rdata"))
+#load(paste0(path, "dat_imputed_all.Rdata"))
+
+#now we want to add the short clone
+#this is treatment clone HD, with cens time 548, whereas censtime hdf is 67
+# example <- dat_imputed_all %>%
+#   filter(.imp == 1 & id == "21000037")
+# 
+# alt_clone <- example %>%
+#   mutate(treatment_clone = "hdf") %>%
+#   filter(days_from_fdd <= cens_time_hdf)
+# 
+# both <- bind_rows(example, alt_clone)
+
+alt_clone <- dat_imputed_all %>%
+  group_by(id) %>%
+  mutate(
+    treatment_clone = if_else(treatment_clone == "hd", "hdf", "hd"),#set the treatment clone to the opposite value
+    current_cens_time = if_else(treatment_clone == "hdf", cens_time_hdf, cens_time_hd) #determine corresponding censor time
+  ) %>%
+  filter(days_from_fdd <= current_cens_time) #cut the rows that fall after current censor time
+
+dat_imputed_both_clones <- bind_rows(dat_imputed_all, alt_clone) #add these back to the dataset with longest clones
+
+save(dat_imputed_both_clones, file = paste0(path, "dat_imputed_both_clones.Rdata"))
