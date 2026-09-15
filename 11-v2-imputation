@@ -343,4 +343,14 @@ alt_clone <- dat_imputed_all %>%
 
 dat_imputed_both_clones <- bind_rows(dat_imputed_all, alt_clone) #add these back to the dataset with longest clones
 
+
+
+#we also want to know current_cens time for those in dat_imputed_all
+dat_imputed_both_clones %<>%
+  group_by(id, treatment_clone, .imp) %>%
+  mutate(
+    current_cens_time = if_else(treatment_clone == "hdf", cens_time_hdf, cens_time_hd) 
+  )%>%
+  ungroup()
+
 save(dat_imputed_both_clones, file = paste0(path, "dat_imputed_both_clones.Rdata"))
