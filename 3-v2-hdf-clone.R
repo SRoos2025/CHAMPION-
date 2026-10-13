@@ -380,29 +380,74 @@ cohort_hdf <- cohort_hdf %>%
   )%>%
   ungroup()
 
-hdf_starters <- cohort_hdf %>%
-  filter(!is.na(first_hdf)) #22,831 patients
-
 hdf_adherent <- cohort_hdf %>%
   filter(!is.na(first_hdf) & first_hdf_day <= 90 & cens_reason != "non-adherence") #14,065 patients
 
-#summarize by bringing down to 1 row per patient
-summary <- cohort_hdf %>%
- group_by(id)%>%
-  slice_head(n=1)
-
 summary_adherent <- hdf_adherent %>%
   group_by(id) %>%
-  slice_head(n=1)
+  slice_head(n=1) #12010
 #turn of scientific notation
 options(sciphen = 999)
-hist(summary$first_hdf_day)
-hist(summary_adherent$first_hdf_day)
 
-hist(summary$perc_hdf_after)
-hist(summary_adherent$perc_hdf_after)
-hist(summary$perc_hd_after)
-hist(summary_adherent$perc_hd_after)
+plots <- list()
+
+plots[[1]] <- ggplot(summary_adherent, aes(x = first_hdf_day)) +
+  geom_histogram(
+    breaks = hist(summary_adherent$first_hdf_day, plot = FALSE)$breaks,
+    fill = "#fe6100",
+    color = "black"
+  ) +
+  scale_x_continuous( limits = c(0, 90),
+                      breaks = seq(0, 90, by = 10), expand = c(0, 1.5)) +
+  scale_y_continuous(breaks = scales::breaks_width(500), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title = "Distribution showing first day of HDF treatment",
+    x = "First day of HDF treatment",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5)
+    )
+
+summary_adherent_after <- summary_adherent %>%
+  filter(cens_time >= 90)#10,964
+
+plots[[2]] <- ggplot(summary_adherent_after, aes(x = perc_hdf_after)) +
+  geom_histogram(
+    breaks = hist(summary_adherent_after$perc_hdf_after, plot = FALSE)$breaks,
+    fill = "#fe6100",
+    color = "black"
+  ) +
+  scale_x_continuous( breaks = seq(0, 100, by = 20),
+                      labels = seq(0, 100, by = 20),
+                      limits = c(0, 100), expand = c(0, 1.5)) +
+  scale_y_continuous( breaks = scales::breaks_width(1000), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title = "Distribution showing percentage of HDF treatments after grace period",
+    x = "Percentage HDF treatments after grace period",
+    y = "Frequency"
+  ) +
+  theme_minimal() + 
+  theme(
+    title = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5)
+  )
+
+figure_hdf <- wrap_plots(plots, nrow = 2) + 
+  plot_layout(guides = "collect") & plot_annotation(tag_levels = "A") & theme(plot.tag = element_text(size = 30))
+                                                                            
+
+ggsave("figure_hdf.pdf", figure_hdf, width = 18, height = 18, dpi = 600)
 
 #4.0 bring down to observation row per 2 week period for grace period----
 #for afterwards, we keep variables for each year
