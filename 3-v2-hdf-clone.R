@@ -151,9 +151,24 @@ cohort_hdf <- cohort_hdf %>%
   ) %>%
   ungroup()
 
+#add cens time specifically for HDF with high convection volume
+cohort_hdf <- cohort_hdf %>%
+  group_by(id) %>%
+  mutate(
+    hdf_convol = txt_substitution_volume + txt_ufv,
+    #sometimes there is no ultrafiltration, in which case we only take substitution volume
+    hdf_convol = if_else(is.na(txt_ufv), txt_substitution_volume, hdf_convol),
+    high_convol = if_else(modality == 1 & hdf_convol >= 23000, 1, 0),
+    cens_time_high_convol = set_censor_time_hdf_high_convol(pick(everything()))
+  )%>%
+  ungroup()
+
 #returns 0, everyone now has a censor time
  check <- cohort_hdf %>%
    filter(is.na(cens_time))
+
+ check <- cohort_hdf %>%
+   filter(is.na(cens_time_high_convol))
 
 #2.0 set censor reason----
  #at C we set it for those who never started HDF
@@ -195,7 +210,8 @@ cohort_hdf <- cohort_hdf %>%
 cohort_hdf <- cohort_hdf %>%
   group_by(id) %>%
   mutate(
-    cens_reason = set_non_adherence_hdf(pick(everything()))
+    cens_reason = set_non_adherence_hdf(pick(everything())),
+    cens_reason_high_convol = set_non_adherence_hdf_high_conv(pick(everything()))
   )
 
 #E
@@ -230,7 +246,37 @@ cohort_hdf <- cohort_hdf %>%
   ) %>%
   ungroup()
 
-
+#and the same for high convection volume
+cohort_hdf <- cohort_hdf %>%
+  group_by(id) %>%
+  mutate(
+    #now we define the censor reasons for people who did start hdf within grace period and who were all the time adherent
+    cens_reason_high_convol = case_when(
+      !is.na(first_hdf) & first_hdf_day <= 90 & 
+        (cens_reason_high_convol != "non-adherence" | is.na(cens_reason_high_convol)) &
+        cens_time == trans_date ~ "transplantation",
+      !is.na(first_hdf) & first_hdf_day <= 90 & 
+        (cens_reason_high_convol != "non-adherence" | is.na(cens_reason_high_convol)) &
+        cens_time == withdraw_date ~ "withdrawal",
+      !is.na(first_hdf) & first_hdf_day <= 90 & 
+        (cens_reason_high_convol != "non-adherence" | is.na(cens_reason_high_convol)) &
+        cens_time == recov_date ~ "kidney function recovery",
+      !is.na(first_hdf) & first_hdf_day <= 90 & 
+        (cens_reason_high_convol != "non-adherence" | is.na(cens_reason_high_convol)) &
+        cens_time == last_event_date & 
+        event_discharge_reason %in% c("Left provider", "Transfer within provider", "NA", "") ~ "admin",
+      !is.na(first_hdf) & first_hdf_day <= 90 & 
+        (cens_reason_high_convol != "non-adherence" | is.na(cens_reason_high_convol)) & 
+        cens_time == death_date ~ "death",
+      #if it was the last measurement without any of the above then we dont know 
+      #and it is administrative loss to follow-up unknown
+      !is.na(first_hdf) & first_hdf_day <= 90 & 
+        (cens_reason_high_convol != "non-adherence" | is.na(cens_reason_high_convol)) &
+        (cens_time == last_treatment | cens_time == last_lab | cens_time == last_comorb  | cens_time == admin_censor_time) ~ "admin",
+      .default = cens_reason_high_convol
+    )
+  ) %>%
+  ungroup()
 
 #if censor time is admin censor time, censor reason is now specifically study end
 #furthermore, censor time can be after admin end which is max follow-up we fix that here
@@ -239,13 +285,19 @@ cohort_hdf <- cohort_hdf %>%
   group_by(id) %>%
   mutate(
     cens_time = if_else(cens_time >= admin_censor_time, admin_censor_time, cens_time),
-    cens_reason = if_else(cens_time == admin_censor_time, "study end", cens_reason)
+    cens_time_high_convol = if_else(cens_time_high_convol >= admin_censor_time, admin_censor_time, cens_time_high_convol),
+    cens_reason = if_else(cens_time == admin_censor_time, "study end", cens_reason),
+    cens_reason_high_convol = if_else(cens_time_high_convol == admin_censor_time, "study end", cens_reason_high_convol),
   ) %>%
   ungroup()
 
 #returns 0, everyone has censor reason      
 check <- cohort_hdf %>%
   filter(is.na(cens_reason))
+
+#4,178 patients did not have non adherence for hdf strategy, but now they do with the definition of high convection volume
+check <- cohort_hdf %>%
+       filter(cens_reason_high_convol == "non-adherence" & cens_reason != "non-adherence")
 
 #save in between
 save(cohort_hdf, file = paste0(path, "cohort_hdf.Rdata"))
