@@ -1,7 +1,7 @@
 #3-v2 hdf clone
 #determine censor time and reason for HDF clone
 #go back to observations per two week period and every year afterwards
-#last updated 08-09-2026
+#last updated 13-10-2026
 #0. set up----
 ##load packages----
 pacman::p_load( "rio", #load data
@@ -596,7 +596,7 @@ cohort_hdf_reduced <- bind_rows(grace_cohort, year_cohort) %>%
   filter((year_period == 0 | year_period <= max_year_period) & (two_week_period == 0  | two_week_period <= max_two_week_period)) %>% #filter out empty rows of year periods after censor time
   #fill cens_reason again
   fill(cens_reason, facility_id, death_date, first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
-       infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day, demo_esrd_cause_icd10text, demo_height,
+       infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day, demo_esrd_cause_icd10text, demo_height, cens_time_high_convol, cens_reason_high_convol,
        demo_male, death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, subgroup_zero, cens_time, subgroup_later, demo_race, country, age_cat, cci, treatment_clone, last_observed_date, first_hdf_day, education, .direction= "downup")%>%
   ungroup()
 
@@ -664,7 +664,7 @@ cohort_hdf_reduced <- cohort_hdf_incl_baseline %>%
   select(id, visit, days_from_fdd, all_of(var_to_fill), facility_id, txt_per_week, 
          first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
          infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day,  demo_esrd_cause_icd10text, demo_height,
-         country, age_cat, demo_male, days_from_fdd, treatment_clone, cens_time, cens_reason, 
+         country, age_cat, demo_male, days_from_fdd, treatment_clone, cens_time, cens_reason, cens_time_high_convol, cens_reason_high_convol,
          death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education, txt_access_flow)%>%
   ungroup()
 
