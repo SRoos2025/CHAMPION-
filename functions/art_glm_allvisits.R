@@ -1,5 +1,5 @@
 art_glm_allvisits <- function (i) {
-  dat_imp <- filter (dat_imputed_both_clones, .imp == i)
+  dat_imp <- filter (data_unweighted, .imp == i)
   
   glm(art_cens == 0 ~ 
         #demographic
