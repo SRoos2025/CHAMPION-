@@ -1,6 +1,6 @@
 #weighting variables script
 #by S. Roos
-#last updated on 15-10-2026
+#last updated on 21-10-2026
 #we use the data with both clones and only imputed data ranging from .imp 1 to .imp 10, as created in 11-v2-imputation
 #0. set up----
 ##load packages----
@@ -378,25 +378,23 @@ gc()
 
 #7.0 combine informative and artificial censoring AND combine all visits
 
+objects <- c("marg_list", "fixed_list", "fixed_list_art", "marg_list_art", "ps_list", "ps_list_art", "ps_list_art_pool",
+             "ps_list_comb", "ps_list_comb_all", "ps_list_pool")
 
 #we can all left join these to data_unweighted
-data_unweighted <- left_join(data_unweighted, ps_list, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, ps_list_art, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, marg_list, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, marg_list_art, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, fixed_list, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, fixed_list_art, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, ps_list_pool, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, ps_list_art_pool, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, ps_list_comb, by = c("unique_id", ".imp", "visit"))
-data_unweighted <- left_join(data_unweighted, ps_list_comb_all, by = c("unique_id", ".imp", "visit"))
+for(i in objects) {
+  data_unweighted %<>%
+    left_join(get(i), by = c("unique_id", ".imp", "visit"))
+}
 
+#rename to keep data_unweighted intact in case changes are needed
 data_ps <- data_unweighted
 
 #now calculate the weights
 #note we do one without stabilization on marginal probability, but the rest we all stabilize on marginal probability to reduce extreme weights
 #and because it does no harm, no difficulty in interpretation
 data_ps %<>%
+  group_by(id, .imp) %>%
   mutate(
     #first just the normal weights (combined_true_weights), we start with informative censoring
     ipcw_inf_cens_true = case_when(
@@ -410,6 +408,8 @@ data_ps %<>%
     ipcw_art_cens = if_else(is.na(ipcw_art_cens), 1, ipcw_art_cens), #set missingness to 1,
     #now combine artificial and informative
     combined_true_weights = ipcw_art_cens * ipcw_inf_cens_true,
+    #now cumulative product
+    combined_true_weights_cumprod = cumprod(combined_true_weights), 
     #stabilized, first informative
     stab_ipcw_inf_cens = case_when(
       inf_cens == 1 ~ prop_score_marg/ (1- ps),
@@ -420,6 +420,7 @@ data_ps %<>%
     #also here there may be NA's which should be 1
     stab_ipcw_art_cens = if_else(is.na(stab_ipcw_art_cens), 1, stab_ipcw_art_cens), #set missingness to 1, 
     stab_combined = stab_ipcw_inf_cens * stab_ipcw_art_cens,
+    stab_combined_cumprod = cumprod(stab_combined),
     #fixed effects, first informative
     fixed_ipcw_cens =  case_when(
       inf_cens == 1 ~ prop_score_fixed/ (1- ps),
@@ -431,6 +432,7 @@ data_ps %<>%
     ipcw_art_fixed = if_else(is.na(ipcw_art_fixed), 1, ipcw_art_fixed),
     #now combined
     fixed_combined = ipcw_art_fixed * fixed_ipcw_cens,
+    fixed_combined_cumprod = cumprod(fixed_combined),
     #now pooled over all visits
     ipcw_inf_cens_pool_true = case_when(
       inf_cens == 1 ~ prop_score_marg/ (1- ps_pool),
@@ -442,14 +444,18 @@ data_ps %<>%
     ipcw_art_cens_pool = if_else(is.na(ipcw_art_cens_pool), 1, ipcw_art_cens_pool),
     #now combine
     combine_pool_visits = ipcw_inf_cens_pool_true * ipcw_art_cens_pool,
+    combine_pool_visits_cumprod = cumprod(combine_pool_visits),
     #now combine artificial and informative censoring
     ipcw_inf_art = case_when(
       cens_combine == 1 ~ prop_score_marg/(1-prop_score_comb),
       cens_combine == 0 ~ prop_score_marg/prop_score_comb),
+    ipcw_inf_art_cumprod = cumprod(ipcw_inf_art),
     ipcw_inf_art_all_visit = case_when(
       cens_combine == 1 ~ prop_score_marg/(1-prop_score_comb_all),
-      cens_combine == 0 ~ prop_score_marg/prop_score_comb_all)
-    )
+      cens_combine == 0 ~ prop_score_marg/prop_score_comb_all),
+    ipcw_inf_art_all_visit_cumprod = cumprod(ipcw_inf_art_all_visit)
+    ) %>%
+  ungroup()
 
 #ipcw with capped weights
 perc <- quantile(data_ps$combined_true_weights, 0.9995) #489.8421
@@ -457,9 +463,12 @@ perc <- quantile(data_ps$combined_true_weights, 0.9995) #489.8421
 
 #we take 99.95th percentile as we lose less people there. 
 data_ps %<>%
+  group_by(id, .imp) %>%
   mutate(
-    ipcw_cap = pmin(combined_true_weights, perc)
-  )
+    ipcw_cap = pmin(combined_true_weights, perc),
+    ipcw_cap_cumprod = cumprod(ipcw_cap)
+  ) %>%
+  ungroup()
 
 save(data_ps, file = paste0(path, "data_ps.Rdata"))
 
