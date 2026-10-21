@@ -1,6 +1,6 @@
 predict_weight_pool <- function (i) {
   #filter per imputation
-  dat_imp <- filter(dat_imputed_both_clones, .imp == i)
+  dat_imp <- filter(data_unweighted, .imp == i)
   
       dat_imp <- dat_imp %>%
         mutate(
