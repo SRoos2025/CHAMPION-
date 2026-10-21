@@ -1,6 +1,6 @@
 #weighting variables script
 #by S. Roos
-#last updated on 18-09-2026
+#last updated on 15-10-2026
 #we use the data with both clones and only imputed data ranging from .imp 1 to .imp 10, as created in 11-v2-imputation
 #0. set up----
 ##load packages----
@@ -23,9 +23,17 @@ walk(list.files(paste0(path, "funs/")), \(x)source(paste0(path, "funs/", x)))
 #load data with events and measurements of sessions including modality changes and their last event date relevant for mortality outcome
 load(paste0(path, "dat_imputed_both_clones.Rdata"))
 
+#for now we created cens time and reason for hdf convection volume higher 
+load(paste0(path, "cens_hdf_high.Rdata"))
+dat_imputed_both_clones %<>%
+  left_join(
+    cens_hdf_high,
+    by = "id"
+  ) #add censor time for hdf with high convection volume
+
 #1.0 prepare for weighting 
 #for a time-varying cox model we need intervals for observation, with outcome indicator at the end
-dat_imputed_both_clones %<>%
+data_unweighted <- dat_imputed_both_clones %>%
   group_by(id, treatment_clone, .imp) %>%
   mutate(
   current_cens_reason = if_else(treatment_clone == "hdf", cens_reason_hdf, cens_reason_hd), #determine current cens reason 
@@ -57,7 +65,7 @@ dat_imputed_both_clones %<>%
 #   select(id, days_from_fdd, visit, current_cens_time, current_cens_reason, t_start, t_stop, inf_cens, art_cens, treatment_clone, cens_time_hdf, cens_time_hd, .imp)
 
 #there is one problem, some people have visit 0 == visit 1, and artificial censoring at baseline
-dat_imputed_both_clones <- dat_imputed_both_clones %>%
+data_unweighted %<>%
   mutate(
     t_stop = case_when(
       t_start == t_stop ~ t_stop + 1, #we know quite well the event dates, but we add one extra day as it probably did not occur exactly that day/ t start can not exactly be t stop we need intervals
@@ -72,16 +80,12 @@ dat_imputed_both_clones <- dat_imputed_both_clones %>%
 #2.0 informative censoring (not artificial)----
 #inspect the frequencies of informative censoring
 #all visits contain censoring events in each imputed set, but at visit 12, only 30
-by(dat_imputed_both_clones$inf_cens, list(dat_imputed_both_clones[["visit"]], dat_imputed_both_clones[[".imp"]]), table)
+by(data_unweighted$inf_cens, list(data_unweighted[["visit"]], data_unweighted[[".imp"]]), table)
 
-by(dat_imputed_both_clones$art_cens, list(dat_imputed_both_clones[["visit"]], dat_imputed_both_clones[["current_cens_reason"]], dat_imputed_both_clones[[".imp"]]), table)
-
-save(dat_imputed_both_clones, file = paste0(path, "dat_imputed_both_clones.Rdata"))
-
-load(paste0(path, "dat_imputed_both_clones.Rdata"))
+by(data_unweighted$art_cens, list(data_unweighted[["visit"]], data_unweighted[["current_cens_reason"]], data_unweighted[[".imp"]]), table)
 
 #education can be imputed as all zero
-dat_imputed_both_clones <- dat_imputed_both_clones %>%
+data_unweighted <- data_unweighted %>%
   arrange(.imp, id, treatment_clone, days_from_fdd, visit) %>%
   group_by(id, .imp, treatment_clone) %>%
   mutate(
@@ -123,7 +127,7 @@ dat_imputed_both_clones <- dat_imputed_both_clones %>%
 #some additional datacleaning
 #for imputation we created dummy variables because longitudinal imputation with categorical variables was unsuitable
 #for the model we turn it back to categorical
-dat_imputed_both_clones %<>%
+data_unweighted %<>%
   arrange(.imp, id, treatment_clone, days_from_fdd, visit) %>%
   group_by(id, .imp, treatment_clone) %>%
   mutate(
@@ -139,13 +143,13 @@ dat_imputed_both_clones %<>%
 # baseline <- dat_imputed_both_clones %>%
 #   filter(mut_number == 1) #shows there are no missing age categories at baseline so it is safe to fill now
 
-dat_imputed_both_clones %<>% 
+data_unweighted %<>% 
   arrange(.imp, id, treatment_clone, days_from_fdd, visit) %>%
   group_by(id, .imp, treatment_clone) %>%
   fill(age_cat, .direction = "down") %>%
   ungroup()
       
-   dat_imputed_both_clones %<>%
+   data_unweighted %<>%
      mutate(
     modality = if_else(mod_mis == 1, 0, modality), #if modality is missing we assume HD
     txt_substitution_volume = if_else(modality == 0, 0, txt_substitution_volume), #with HD, substitution volume should be 0
@@ -163,13 +167,13 @@ dat_imputed_both_clones %<>%
     education_cat_base = as.factor(education_cat_base)
   )
 
-save(dat_imputed_both_clones, file = paste0(path, "dat_imputed_both_clones.Rdata"))
+save(data_unweighted, file = paste0(path, "data_unweighted.Rdata"))
 
-load(paste0(path, "dat_imputed_both_clones.Rdata"))
+load(paste0(path, "data_unweighted.Rdata"))
 
 #1.1TRUE informative censoring weight----
 #make vector of each visit and imputation
-imps <- sort(unique(dat_imputed_both_clones[[".imp"]]))
+imps <- sort(unique(data_unweighted[[".imp"]]))
 visits <- 0:12
 
 #determine probabilities for each visit within each imputation with generalized linear model
@@ -177,24 +181,14 @@ fit_list <- map(imps, glm_for_weighting)
 
 #set the first names within this list to imp_
 names(fit_list) <- paste0("imp_", imps)
-
 fit_list <- map(fit_list, function(.x) set_names(.x, visits))
 
-#note only works with argument new_data = dat_imp_visit within function predict weight
-#this is maybe because some treatment clones have the same visits but there are also clones with visits that are not present within the other clone?
-ps_list <- map(imps, predict_weight)
+#predict propensity scores
+ps_list <- map(imps, predict_weight) #predict propensity scores for each imputation and put in list
+ps_list <- bind_rows(ps_list) %>% #turn back to dataframe
+  select(c(unique_id, visit, .imp, ps)) #select unique id instead of id so it can be matched later on
+  rm(fit_list) #remove to clean working space
 
-data_weighted <- bind_rows(ps_list) %>%
-  mutate(
-    ipcw_inf_cens_true = case_when(
-      inf_cens == 1 ~ 1/ (1- ps),
-      inf_cens == 0 ~ 1/ps
-    )
-  )
-summary(data_weighted$ipcw_inf_cens_true) #shows that max ipcw is 48,187 so we need to stabilize this first
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
 #1.2 TRUE artificial weight----
 #now determine weights for artificial censoring
 #note this is only in visits 0 up until 7
@@ -208,26 +202,31 @@ names(fit_list_art) <- paste0("imp_", imps)
 fit_list_art <- map(fit_list_art, function(.x) set_names(.x, visits))
 
 ps_list_art <- map(imps, predict_weight_art)
+  ps_list_art <- bind_rows(ps_list_art) %>%
+  mutate(ps_art = ps) %>%
+  select(c(unique_id, visit, .imp, ps_art))
+rm(fit_list_art) #create workingspace
+gc()
 
-ps_list_art <- bind_rows(ps_list_art)
 
-ps_list_art %<>%
-  mutate(
-    ipcw_art_cens = case_when(
-      art_cens == 1 ~ 1/ (1- ps),
-      art_cens == 0 ~ 1/ps
-    ),
-    ps_art = ps
-  ) %>%
+#2.0 marginal
+visits <- 0:12
+marg_fit <- map(imps, glm_marginal)
+
+#set the first names within this list to imp_
+names(marg_fit) <- paste0("imp_", imps)
+
+marg_fit <- map(marg_fit, function(.x) set_names(.x, visits))
+
+marg_list <- map(imps, predict_weight_marginal)
+marg_list <- bind_rows(marg_list) %>%
+  select(c(unique_id, visit, .imp, ps)) %>%
+  mutate(prop_score_marg = ps) %>%
   select(-ps)
+rm(marg_fit)
+gc()
 
-summary(ps_list_art$ipcw_art_cens) #shows that max is 1134 so we must stabilize as well
-
-ps_list_art %<>% select(c("unique_id", ".imp", "visit", "ipcw_art_cens", "ps_art", "art_cens"))
-
-save(ps_list_art, file = paste0(path, "ps_list_art.Rdata"))
-
-#INTERMEZZO calculate marginal probability now because we can not add ps to data weighted
+#2.1 marginal artificial weights----
 marg_fit_art <- map(imps, glm_marginal_art)
 
 #set the first names within this list to imp_
@@ -236,76 +235,15 @@ names(marg_fit_art) <- paste0("imp_", imps)
 marg_fit_art <- map(marg_fit_art, function(.x) set_names(.x, visits))
 
 marg_list_art <- map(imps, predict_weight_marginal_art)
-
 marg_list_art <- bind_rows(marg_list_art) %>%
   select(c(unique_id, visit, .imp, ps)) %>%
   mutate(prop_score_marg_art = ps) %>%
   select(-ps)
 
-#left join
-ps_list_art_incl_marginal <- left_join(ps_list_art, marg_list_art, by =c("unique_id", "visit", ".imp"))
+rm(marg_fit_art)
+gc()
 
-ps_list_art_incl_marginal %<>%
-  mutate(
-    stab_ipcw_art_cens = case_when(
-      art_cens == 1 ~ prop_score_marg_art/ (1- ps_art),
-      art_cens == 0 ~ prop_score_marg_art/ps_art
-  ))
-
-summary(ps_list_art_incl_marginal$stab_ipcw_art_cens)
-
-ps_list_art_incl_marginal <- ps_list_art_incl_marginal %>%
-  select(-c("ps_art", "art_cens", "prop_score_marg_art"))
-
-#1.3 TRUE combined weight----
-data_weighted <- left_join(data_weighted, ps_list_art_incl_marginal, by = c("unique_id", "visit", ".imp")) %>%
-  mutate(
-    ipcw_art_cens = if_else(is.na(ipcw_art_cens), 1, ipcw_art_cens), #set missingness to 1, 
-    stab_ipcw_art_cens = if_else(is.na( stab_ipcw_art_cens), 1,  stab_ipcw_art_cens),
-    #as these are the visits outside the grace period that do not have artificial weights
-    combined_true_weights = ipcw_art_cens * ipcw_inf_cens_true
-  )
-  rm(ps_list_art)
-  rm(fit_list_art)
-  rm(ps_list_art_incl_marginal)
-  rm(marg_fit_art)
-  
-  save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-  load(paste0(path, "data_weighted.Rdata"))
-
-imp_1 <- data_weighted %>%
-  filter(.imp == 1) %>%
-  mutate(
-    visit = sprintf("%02d", as.integer(visit))
-  ) %>%
-  arrange(id, treatment_clone, as.integer(visit))
-
-covs <- imp_1[c("age_cat", "demo_male" , "education_cat_base" ,  
-                        #clinical
-                        "txt_pre_sbp", "txt_pre_dbp" , "cci" , "bmi" ,
-                        #dialysis related
-                        "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" ,
-                        # lab
-                        "lab_serum_na" , "lab_potassium" , "lab_phosph" , "lab_albumin" , "lab_crp" ,
-                        
-                        "lab_hgba1c" , "lab_calcium" , "lab_creatinine" , "lab_hgb" , "lab_pth" , "lab_bicarb" , "lab_ferritin" )]
-
-bal <- bal.tab(
-  covs,
-  treat    = imp_1[["treatment_clone"]],
-  weights  = imp_1[["combined_true_weights"]],
-  cluster  = imp_1[["visit"]],     # do balance checks per vist
-  which.cluster = .all,     # show all visits
-  un = TRUE #show unbalanced and balanced
-)
-
-plot <- love_plot(data = bal)
-
-plot
-ggsave("plot_true.pdf", plot, width = 12, height = 22, dpi = 1200)
-
-#2.0 POOL over the visits in stead of fitting glm per visit----
-imps <- sort(unique(data_weighted[[".imp"]]))
+#3.0 POOL over the visits in stead of fitting glm per visit----
 visits <- 0:12
 
 #determine probabilities for each visit within each imputation with generalized linear model
@@ -317,27 +255,17 @@ names(fit_list_pool) <- paste0("imp_", imps)
 #note only works with argument new_data = dat_imp_visit within function predict weight
 #this is maybe because some treatment clones have the same visits but there are also clones with visits that are not present within the other clone?
 ps_list_pool <- map(imps, predict_weight_pool)
+ps_list_pool <-  bind_rows(ps_list_pool) %>%
+  select(c(unique_id, visit, .imp, ps)) %>%
+  mutate(ps_pool = ps) %>%
+  select(-ps)
 
-weight_pool_true <- bind_rows(ps_list_pool) %>%
-  mutate(
-    ipcw_inf_cens_pool_true = case_when(
-      inf_cens == 1 ~ 1/ (1- ps),
-      inf_cens == 0 ~ 1/ps
-    )
-  )
-summary(weight_pool_true$ipcw_inf_cens_pool_true) #shows that max ipcw is 1889 so we need to stabilize this first
+rm(fit_list_pool)
+gc()
 
-weight_pool_true %<>% select(c("unique_id", ".imp", "visit", "ipcw_inf_cens_pool_true"))
-
-data_weighted <- left_join(data_weighted, weight_pool_true,by = c("unique_id", "visit", ".imp"))
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
-
-#2.1 POOLED TRUE artificial weight----
+#3.1 POOLED TRUE artificial weight----
 #now determine weights for artificial censoring
 #note this is only in visits 0 up until 7
-imps <- sort(unique(dat_imputed_both_clones[[".imp"]]))
 visits <- 0:7
 
 fit_list_art_pool <- map(imps, art_glm_allvisits)
@@ -346,134 +274,13 @@ fit_list_art_pool <- map(imps, art_glm_allvisits)
 names(fit_list_art_pool) <- paste0("imp_", imps)
 
 ps_list_art_pool <- map(imps, predict_weight_art_pool)
-
 ps_list_art_pool <- bind_rows(ps_list_art_pool) %>%
-  mutate(
-    ipcw_art_cens_pool = case_when(
-      art_cens == 1 ~ 1/ (1- ps),
-      art_cens == 0 ~ 1/ps
-    )
-  )
-
-summary(ps_list_art_pool$ipcw_art_cens_pool) #shows that max is 49 
-
-ps_list_art_pool %<>% select(c("unique_id", ".imp", "visit", "ipcw_art_cens_pool"))
-
-data_weighted <- left_join(data_weighted, ps_list_art_pool, by = c("unique_id", "visit", ".imp"))
-#2.2 POOLED TRUE combined weight----
-data_weighted <- data_weighted %>%
-  mutate(
-    ipcw_art_cens_pool = if_else(is.na(ipcw_art_cens_pool), 1, ipcw_art_cens_pool), #set missingness to 1, 
-    #as these are the visits outside the grace period that do not have artificial weights
-    combined_true_weights_pool = ipcw_art_cens_pool * ipcw_inf_cens_pool_true
-  )
-
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
-
-imp_1 <- data_weighted %>%
-  filter(.imp == 1) %>%
-  mutate(
-    visit = sprintf("%02d", as.integer(visit))
-  ) %>%
-  arrange(id, treatment_clone, as.integer(visit))
-
-covs <- imp_1[c("age_cat", "demo_male" , "education_cat_base" ,  
-                #clinical
-                "txt_pre_sbp", "txt_pre_dbp" , "cci" , "bmi" ,
-                #dialysis related
-                "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" ,
-                # lab
-                "lab_serum_na" , "lab_potassium" , "lab_phosph" , "lab_albumin" , "lab_crp" ,
-                
-                "lab_hgba1c" , "lab_calcium" , "lab_creatinine" , "lab_hgb" , "lab_pth" , "lab_bicarb" , "lab_ferritin" )]
-
-bal <- bal.tab(
-  covs,
-  treat    = imp_1[["treatment_clone"]],
-  weights  = imp_1[["combined_true_weights_pool"]],
-  cluster  = imp_1[["visit"]],     # do balance checks per vist
-  which.cluster = .all,     # show all visits
-  un = TRUE #show unbalanced and balanced
-)
-
-plot <- love_plot(data = bal)
-plot
-
-ggsave("plot_pool.pdf", plot, width = 12, height = 22, dpi = 1200)
-
-#3.0 calculate marginal probability informative censoring----
-visits <- 0:12
-marg_fit <- map(imps, glm_marginal)
-
-#set the first names within this list to imp_
-names(marg_fit) <- paste0("imp_", imps)
-
-marg_fit <- map(marg_fit, function(.x) set_names(.x, visits))
-
-marg_list <- map(imps, predict_weight_marginal)
-
-marg_list <- bind_rows(marg_list) %>%
   select(c(unique_id, visit, .imp, ps)) %>%
-  mutate(prop_score_marg = ps) %>%
+  mutate(ps_pool_art = ps) %>%
   select(-ps)
 
-#we add this propensity score marginal per visit and imputation to our core dataset data_weighted
-data_weighted <- left_join(data_weighted, marg_list, by = c("unique_id", ".imp", "visit"))
-
-#note we only have one ps left, that is the true weight from informative censoring (1.0)
-data_weighted %<>%
-  mutate(
-    stab_ipcw_inf_cens = case_when(
-      inf_cens == 1 ~ prop_score_marg/ (1- ps),
-      inf_cens == 0 ~ prop_score_marg/ps
-    )
-  )
-
-summary(data_weighted$stab_ipcw_inf_cens) #still very large
-
-data_weighted %<>%
-  mutate(
-   combined_stab_ipcw = stab_ipcw_art_cens * stab_ipcw_inf_cens
-    )
-
-summary(data_weighted$combined_stab_ipcw)
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
-
-imp_1 <- data_weighted %>%
-  filter(.imp == 1) %>%
-  mutate(
-    visit = sprintf("%02d", as.integer(visit))
-  ) %>%
-  arrange(id, treatment_clone, as.integer(visit))
-
-covs <- imp_1[c("age_cat", "demo_male" , "education_cat_base" ,  
-                #clinical
-                "txt_pre_sbp", "txt_pre_dbp" , "cci" , "bmi" ,
-                #dialysis related
-                "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" ,
-                # lab
-                "lab_serum_na" , "lab_potassium" , "lab_phosph" , "lab_albumin" , "lab_crp" ,
-                
-                "lab_hgba1c" , "lab_calcium" , "lab_creatinine" , "lab_hgb" , "lab_pth" , "lab_bicarb" , "lab_ferritin" )]
-
-bal <- bal.tab(
-  covs,
-  treat    = imp_1[["treatment_clone"]],
-  weights  = imp_1[["combined_stab_ipcw"]],
-  cluster  = imp_1[["visit"]],     # do balance checks per vist
-  which.cluster = .all,     # show all visits
-  un = TRUE #show unbalanced and balanced
-)
-
-plot <- love_plot(data = bal)
-plot
-
-ggsave("plot_marg_stab.pdf", plot, width = 12, height = 22, dpi = 1200)
-
+rm(fit_list_art_pool)
+gc()
 
 #4.0 calculate stabilized with fixed effects informative censoring----
 visits <- 0:12
@@ -485,32 +292,15 @@ names(fixed_fit) <- paste0("imp_", imps)
 fixed_fit <- map(fixed_fit, function(.x) set_names(.x, visits))
 
 fixed_list <- map(imps, predict_weight_fixed)
-
 fixed_list <- bind_rows(fixed_list) %>%
   select(c(unique_id, visit, .imp, ps)) %>%
   mutate(prop_score_fixed = ps) %>%
   select(-ps)
 
-#we add this propensity score marginal per visit and imputation to our core dataset data_weighted
-data_weighted <- left_join(data_weighted, fixed_list, by = c("unique_id", ".imp", "visit"))
+rm(fixed_fit)
+gc()
 
-data_weighted %<>%
-  mutate(
-    fixed_ipcw_cens =  case_when(
-      inf_cens == 1 ~ prop_score_fixed/ (1- ps),
-      inf_cens == 0 ~ prop_score_fixed/ps
-  )
-  )
-
-summary(data_weighted$fixed_ipcw_cens)
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
-
-#load the true unstabilized propensity score for artificial weighting
-load(paste0(path, "ps_list_art.Rdata"))
-
-#fixed effects artificl weights
+#4.1fixed effects artificl weights
 visits <- 0:7
 fixed_fit_art <- map(imps, glm_fixed_art)
 
@@ -520,116 +310,157 @@ names(fixed_fit_art) <- paste0("imp_", imps)
 fixed_fit_art <- map(fixed_fit_art, function(.x) set_names(.x, visits))
 
 fixed_list_art <- map(imps, predict_weight_fixed_art)
-
 fixed_list_art <- bind_rows(fixed_list_art) %>%
   select(c(unique_id, visit, .imp, ps)) %>%
   mutate(prop_score_fixed_art = ps) %>%
   select(-ps)
 
-save(fixed_list_art, file = paste0(path, "fixed_list_art.Rdata"))
-
-fixed_combined <- left_join(fixed_list_art, ps_list_art, by = c("unique_id", ".imp", "visit"))     
-
-fixed_combined  %<>%
+rm(fixed_fit_art)
+gc()
+#5.0 combine informative and artificial censoring
+data_unweighted %<>%
   mutate(
+    cens_combine = if_else(inf_cens == 1 | art_cens == 1, 1, 0) #combined censoring if either informative or censoring is one at that row
+    #note this is per row, so we dont have to group by id
+  )
+visits <- 0:12
+
+#determine probabilities for each visit within each imputation with generalized linear model
+fit_list_comb <- map(imps, glm_for_weighting_comb)
+ #
+#set the first names within this list to imp_
+names(fit_list_comb) <- paste0("imp_", imps)
+fit_list_comb <- map(fit_list_comb, function(.x) set_names(.x, visits))
+
+#predict propensity scores
+ps_list_comb <- map(imps, predict_weight_comb) #predict propensity scores for each imputation and put in list
+ps_list_comb <- bind_rows(ps_list_comb) %>% #turn back to dataframe
+  select(c(unique_id, visit, .imp, ps))%>% #select unique id instead of id so it can be matched later on
+  mutate(prop_score_comb = ps)%>%
+  select(-ps)
+rm(fit_list_comb) #remove to clean working space
+gc()
+
+#7.0 combine informative AND artificial censoring AND combine all visits
+fit_comb_all <- map(imps, glm_comb_everything)
+names(fit_comb_all) <- paste0("imp_", imps)
+
+ps_list_comb_all <- map(imps, predict_weight_comb_all) #predict propensity scores for each imputation and put in list
+ps_list_comb_all <- bind_rows(ps_list_comb_all) %>% #turn back to dataframe
+  select(c(unique_id, visit, .imp, ps))%>% #select unique id instead of id so it can be matched later on
+  mutate(prop_score_comb_all = ps)%>%
+  select(-ps)
+rm(fit_comb_all) #remove to clean working space
+gc()
+
+
+#now we have:
+#1.0 TRUE WEIGHTS
+#ps_list with ps
+#ps_list_art with ps_art
+
+#2.0 CAPPING CAN BE DONE AFTER JOINING WHEN CALCULATING WEGIHTS
+
+#3.0 STABILIZE MARGINAL EFFECTS
+#marg list with prop_score_marg
+#marg list_art with prop_score_marg_art
+
+#4.0 stabilize fixed effects
+#fixed_list with prop_score_fixed
+#fixed_list_art with prop_score_fixed_art
+
+#5.0 POOL OVER ALL WEIGHTING MOMENTS
+##ps_list_pool with ps_pool
+#ps_list_art_pool with ps_pool_art
+
+#6.0 COMBINE INFORMATIVE AND ARTIFICIAL CENSORING
+#ps_list_comb with prop_score_comb
+
+#7.0 combine informative and artificial censoring AND combine all visits
+
+
+#we can all left join these to data_unweighted
+data_unweighted <- left_join(data_unweighted, ps_list, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, ps_list_art, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, marg_list, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, marg_list_art, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, fixed_list, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, fixed_list_art, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, ps_list_pool, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, ps_list_art_pool, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, ps_list_comb, by = c("unique_id", ".imp", "visit"))
+data_unweighted <- left_join(data_unweighted, ps_list_comb_all, by = c("unique_id", ".imp", "visit"))
+
+data_ps <- data_unweighted
+
+#now calculate the weights
+#note we do one without stabilization on marginal probability, but the rest we all stabilize on marginal probability to reduce extreme weights
+#and because it does no harm, no difficulty in interpretation
+data_ps %<>%
+  mutate(
+    #first just the normal weights (combined_true_weights), we start with informative censoring
+    ipcw_inf_cens_true = case_when(
+             inf_cens == 1 ~ 1/ (1- ps),
+            inf_cens == 0 ~ 1/ps),
+    #then arificial censoring
+    ipcw_art_cens = case_when(
+             art_cens == 1 ~ 1/ (1- ps_art),
+            art_cens == 0 ~ 1/ps_art),
+    #artificial may be NA because this is only calculated over the first 7 visits, the rest should be 1 (so no effect)
+    ipcw_art_cens = if_else(is.na(ipcw_art_cens), 1, ipcw_art_cens), #set missingness to 1,
+    #now combine artificial and informative
+    combined_true_weights = ipcw_art_cens * ipcw_inf_cens_true,
+    #stabilized, first informative
+    stab_ipcw_inf_cens = case_when(
+      inf_cens == 1 ~ prop_score_marg/ (1- ps),
+      inf_cens == 0 ~ prop_score_marg/ps),
+    stab_ipcw_art_cens = case_when(
+          art_cens == 1 ~ prop_score_marg_art/ (1- ps_art),
+         art_cens == 0 ~ prop_score_marg_art/ps_art),
+    #also here there may be NA's which should be 1
+    stab_ipcw_art_cens = if_else(is.na(stab_ipcw_art_cens), 1, stab_ipcw_art_cens), #set missingness to 1, 
+    stab_combined = stab_ipcw_inf_cens * stab_ipcw_art_cens,
+    #fixed effects, first informative
+    fixed_ipcw_cens =  case_when(
+      inf_cens == 1 ~ prop_score_fixed/ (1- ps),
+      inf_cens == 0 ~ prop_score_fixed/ps),
+    #then artificial fixed
     ipcw_art_fixed =  case_when(
       art_cens == 1 ~ prop_score_fixed_art/ (1- ps_art),
-      art_cens == 0 ~ prop_score_fixed_art/ps_art
-  )
-  )
-
-summary(fixed_combined$ipcw_art_fixed)
-
-fixed_combined %<>% select(c("unique_id", ".imp", "visit", "ipcw_art_fixed"))
-
-data_weighted <- left_join(data_weighted, fixed_combined, by =  c("unique_id", ".imp", "visit"))
-
-data_weighted <- data_weighted %>%
-  mutate(
+      art_cens == 0 ~ prop_score_fixed_art/ps_art),
     ipcw_art_fixed = if_else(is.na(ipcw_art_fixed), 1, ipcw_art_fixed),
-    combined_fixed_ipcw = ipcw_art_fixed * fixed_ipcw_cens
-  )
-summary(data_weighted$combined_fixed_ipcw)
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
-
-imp_1 <- data_weighted %>%
-  filter(.imp == 1) %>%
-  mutate(
-    visit = sprintf("%02d", as.integer(visit))
-  ) %>%
-  arrange(id, treatment_clone, as.integer(visit))
-
-covs <- imp_1[c("age_cat", "demo_male" , "education_cat_base" ,  
-                #clinical
-                "txt_pre_sbp", "txt_pre_dbp" , "cci" , "bmi" ,
-                #dialysis related
-                "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" ,
-                # lab
-                "lab_serum_na" , "lab_potassium" , "lab_phosph" , "lab_albumin" , "lab_crp" ,
-                
-                "lab_hgba1c" , "lab_calcium" , "lab_creatinine" , "lab_hgb" , "lab_pth" , "lab_bicarb" , "lab_ferritin" )]
-
-bal <- bal.tab(
-  covs,
-  treat    = imp_1[["treatment_clone"]],
-  weights  = imp_1[["combined_fixed_ipcw"]],
-  cluster  = imp_1[["visit"]],     # do balance checks per vist
-  which.cluster = .all,     # show all visits
-  un = TRUE #show unbalanced and balanced
-)
-
-plot <- love_plot(data = bal)
-plot
-
-ggsave("plot_fixed.pdf", plot, width = 12, height = 22, dpi = 1200)
+    #now combined
+    fixed_combined = ipcw_art_fixed * fixed_ipcw_cens,
+    #now pooled over all visits
+    ipcw_inf_cens_pool_true = case_when(
+      inf_cens == 1 ~ prop_score_marg/ (1- ps_pool),
+      inf_cens == 0 ~ prop_score_marg/ps_pool),
+    #now for artificial
+    ipcw_art_cens_pool = case_when(
+      art_cens == 1 ~ prop_score_marg_art/ (1- ps_pool_art),
+      art_cens == 0 ~ prop_score_marg_art/ps_pool_art),
+    ipcw_art_cens_pool = if_else(is.na(ipcw_art_cens_pool), 1, ipcw_art_cens_pool),
+    #now combine
+    combine_pool_visits = ipcw_inf_cens_pool_true * ipcw_art_cens_pool,
+    #now combine artificial and informative censoring
+    ipcw_inf_art = case_when(
+      cens_combine == 1 ~ prop_score_marg/(1-prop_score_comb),
+      cens_combine == 0 ~ prop_score_marg/prop_score_comb),
+    ipcw_inf_art_all_visit = case_when(
+      cens_combine == 1 ~ prop_score_marg/(1-prop_score_comb_all),
+      cens_combine == 0 ~ prop_score_marg/prop_score_comb_all)
+    )
 
 #ipcw with capped weights
-perc <- quantile(data_weighted$combined_true_weights, 0.9995) #489.8421
-quantile(data_weighted$combined_true_weights, 0.99) #34.00736
-
+perc <- quantile(data_ps$combined_true_weights, 0.9995) #489.8421
+#perc <- quantile(data_ps$combined_true_weights, 0.99) #34.00736
 
 #we take 99.95th percentile as we lose less people there. 
-data_weighted %<>%
+data_ps %<>%
   mutate(
     ipcw_cap = pmin(combined_true_weights, perc)
   )
 
-summary(data_weighted$ipcw_cap)
+save(data_ps, file = paste0(path, "data_ps.Rdata"))
 
-imp_1 <- data_weighted %>%
-  filter(.imp == 1) %>%
-  mutate(
-    visit = sprintf("%02d", as.integer(visit))
-  ) %>%
-  arrange(id, treatment_clone, as.integer(visit))
-
-covs <- imp_1[c("age_cat", "demo_male" , "education_cat_base" ,  
-                #clinical
-                "txt_pre_sbp", "txt_pre_dbp" , "cci" , "bmi" ,
-                #dialysis related
-                "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" ,
-                # lab
-                "lab_serum_na" , "lab_potassium" , "lab_phosph" , "lab_albumin" , "lab_crp" ,
-                
-                "lab_hgba1c" , "lab_calcium" , "lab_creatinine" , "lab_hgb" , "lab_pth" , "lab_bicarb" , "lab_ferritin" )]
-
-
-bal <- bal.tab(
-  covs,
-  treat    = imp_1[["treatment_clone"]],
-  weights  = imp_1[["ipcw_cap"]],
-  cluster  = imp_1[["visit"]],     # do balance checks per vist
-  which.cluster = .all,     # show all visits
-  un = TRUE #show unbalanced and balanced
-)
-
-plot <- love_plot(data = bal)
-plot
-
-ggsave("plot_capped.pdf", plot, width = 12, height = 22, dpi = 1200)
-
-
-save(data_weighted, file = paste0(path, "data_weighted.Rdata"))
-load(paste0(path, "data_weighted.Rdata"))
+load(paste0(path, "data_ps.Rdata"))
