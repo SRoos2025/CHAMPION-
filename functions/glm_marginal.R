@@ -1,5 +1,5 @@
 glm_marginal <-  function (i) {
-  dat_imp <- filter(data_weighted, .imp == i) # filter each imputed set
+  dat_imp <- filter(data_unweighted, .imp == i) # filter each imputed set
   
   #make model for chance of not being censored, inf_cens = 0
   map(visits, function(v) {
@@ -12,3 +12,4 @@ glm_marginal <-  function (i) {
     )
   })
 }
+
