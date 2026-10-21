@@ -1,6 +1,6 @@
 predict_weight_fixed <- function (i) {
   #filter per imputation
-  dat_imp <- filter(data_weighted, .imp == i)
+  dat_imp <- filter(data_unweighted, .imp == i)
   
   #map over visits and put in dataframe using bind rows
   bind_rows(
