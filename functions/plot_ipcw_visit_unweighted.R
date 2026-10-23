@@ -13,6 +13,10 @@ plot_ipcw_visit_unweighted <- function(data, ps = "p", inf_cens = "inf_cens", te
                  )))+ #max 2 plots per row labeller = labeller(visit = function(x) paste("Visit", x))) + 
     #coord_cartesian(xlim = c(0.8, 1.0)) + # zoom
     labs( x = "Propensity score", y = "Density", title = "Unweighted Distribution of propensity scores per study visit", fill = "Censoring status"
+    )+ 
+  scale_x_continuous(
+      limits = c(0, 1),
+      breaks = seq(0, 1, by = 0.25)
     )+
     theme_minimal()+
     theme(
