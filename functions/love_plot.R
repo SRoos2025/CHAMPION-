@@ -32,6 +32,7 @@ love_plot <- function (data) {
                  lab_bicarb          = "Serum Bicarbonate",
                  lab_ferritin        = "Serum Ferritin")
   
+  
   plot <- love.plot(
   data,
   var.names = new.names,
@@ -39,27 +40,31 @@ love_plot <- function (data) {
   abs = TRUE, #show absolute SMD's
   var.order = "unadjusted",
   which.cluster = .all,      # one facet per visit
+  stars = "raw",
   cluster.subtitles = FALSE,
   colors = c("Unadjusted" = "#648FFF",
-             "Adjusted" = "#FFB000")
-) +
+             "Adjusted" = "#FFB000"),
+  alpha = 0.8)+
+    
+    #we use ggh4x to remove y labels for the other plots see: https://teunbrand.github.io/ggh4x/articles/Facets.html
     ggh4x::facet_wrap2(
-      ~ cluster,
-      ncol = 3,
+      ~ factor(cluster, levels = as.character(0:12)),
+      ncol = 4,
+      scales = "free_x", #let the range of x axis be determined per plot
       axes = "all",
       remove_labels = "y",
       labeller = as_labeller(
         c(
-          "00" = "Weighting moment 0",
-          "01" = "Weighting moment 1",
-          "02" = "Weighting moment 2",
-          "03" = "Weighting moment 3",
-          "04" = "Weighting moment 4",
-          "05" = "Weighting moment 5",
-          "06" = "Weighting moment 6",
-          "07" = "Weighting moment 7",
-          "08" = "Weighting moment 8",
-          "09" = "Weighting moment 9",
+          "0" = "Weighting moment 0",
+          "1" = "Weighting moment 1",
+          "2" = "Weighting moment 2",
+          "3" = "Weighting moment 3",
+          "4" = "Weighting moment 4",
+          "5" = "Weighting moment 5",
+          "6" = "Weighting moment 6",
+          "7" = "Weighting moment 7",
+          "8" = "Weighting moment 8",
+          "9" = "Weighting moment 9",
           "10" = "Weighting moment 10",
           "11" = "Weighting moment 11",
           "12"= "Weighting moment 12"
@@ -69,11 +74,15 @@ love_plot <- function (data) {
     labs(x = "Absolute Standardized Mean Differences",
          title = NULL) +
     theme(
+      text = element_text(
+        family = "Times"
+      ),
       axis.text = element_text(size = 11),
       axis.title = element_text(size = 13),
       strip.text = element_text(size = 13),
       legend.text = element_text(size = 15),
-      legend.title = element_text(size = 15)
+      legend.title = element_text(size = 15),
+      legend.position = "bottom"
     )
   return (plot)
 }
