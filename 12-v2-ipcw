@@ -22,6 +22,18 @@ walk(list.files(paste0(path, "funs/")), \(x)source(paste0(path, "funs/", x)))
 
 load(paste0(path, "data_ps.Rdata"))
 
+#we checked this after this script
+#with and without weights at visit 12, the measurements are equal there so we set to 1 at visit 12
+#here it reduces computationally heaviness of model
+#for fixed covariates, weighting does have an effect in visit 12 with max weight of 38
+data_ps <- data_ps %>%
+  mutate(
+    ipcw_inf_art_cumprod = if_else(visit == 12, 1, ipcw_inf_art_cumprod),
+    combined_true_weights_cumprod = if_else(visit == 12, 1, combined_true_weights_cumprod),
+    stab_combined_cumprod = if_else(visit == 12, 1, stab_combined_cumprod)
+  )
+save(data_ps, file = paste0(path, "data_ps.Rdata"))
+
 #we select first imputation
 covs <- get_covs_imp_1(data = data_ps)
 
