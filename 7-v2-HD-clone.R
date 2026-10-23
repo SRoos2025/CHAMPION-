@@ -10,7 +10,9 @@ pacman::p_load( "rio", #load data
                 "dplyr", #untangle data
                 "tidyr", #untangle data
                 "stringr", #to detect text patterns with reggex
-                "lubridate") #for working with dates
+                "lubridate",#for working with dates
+                "ggplot2",
+                "patchwork") 
 
 
 ##define path to save any output to, and path import to import data
@@ -254,6 +256,13 @@ cohort_hd <- cohort_hd %>%
     ),
     death_reason_cardiovasc = max(death_reason_cardiovasc, na.rm = TRUE),
     death_reason_cardiovasc = if_else(is.infinite(death_reason_cardiovasc), NA, death_reason_cardiovasc),
+    death_reason_cardiac = case_when(
+      max(event_died, na.rm = TRUE) == 1 & 
+        str_detect(cod_icd10text[event_died == 1], "^I1[0-15]|^I2[0-5]|^I3[0-9]|^I4[0-9]|^I5[0-2]") ~ 1,
+      .default = NA
+    ),
+    death_reason_cardiac = max(death_reason_cardiac, na.rm = TRUE),
+    death_reason_cardiac = if_else(is.infinite(death_reason_cardiac), 0, death_reason_cardiac),
     death_reason_infect_incl_covid = case_when(
       str_detect(cod_icd10text[event_died == 1], "^A[0-9]|^B[0-9]|^U[07]|^J[0-22]") ~ 1,
       .default = NA 
@@ -297,46 +306,71 @@ desc <- cohort_hd %>%
     perc_hd_after = (total_hd_after/total_treat_after)* 100) %>%
   ungroup()
 
-summary_all <- desc %>%
-  group_by(id)%>%
-  slice_head(n=1)
-
-hd_adherent <- cohort_hd %>%
-  filter(!is.na(first_hd) & first_hd_day <= 90 & cens_reason != "non-adherence") #18,554 patients
-
-summary_adherent <- hd_adherent %>%
+hd_adherent <- desc %>%
   group_by(id) %>%
-  mutate(
-    #total treatments
-    total_treat = n(),
-    #total treatments after 90 days
-    after = if_else(days_from_fdd >= 90, 1, 0),
-    total_treat_after = sum(after == 1),
-    #total hdf treatments
-    total_hdf = sum(modality == 1, na.rm = TRUE), 
-    #total hdf treatments after 90 days
-    hdf_after = if_else(days_from_fdd >= 90 & modality == 1, 1, 0),
-    total_hdf_after = sum(hdf_after == 1, na.rm = TRUE),
-    #total hd treatments 
-    total_hd = sum(modality == 0, na.rm = TRUE),
-    #total hd treatments after 90 days
-    hd_after = if_else(days_from_fdd >= 90 & modality == 0, 1, 0),
-    total_hd_after = sum(hd_after == 1, na.rm = TRUE),
-    #overall percentage treatments hdf & hd
-    perc_hdf = (total_hdf) / total_treat * 100 ,
-    perc_hd = (total_hd/total_treat) * 100,
-    #overall percentage treatments after 90 days
-    perc_hdf_after = (total_hdf_after/total_treat_after)*100,
-    perc_hd_after = (total_hd_after/total_treat_after)* 100) %>%
-  slice_head(n=1)
+  filter(!is.na(first_hd) & first_hd_day <= 90 & cens_reason != "non-adherence")%>%
+  slice_head(n = 1) %>%#14,840 patients
+ungroup()
 
-hist(desc$first_hd_day)
-hist(hd_adherent$first_hd_day)
+plots <- list()
 
-hist(summary_all$perc_hd_after)
-hist(summary_adherent$perc_hd_after)
+plots[[1]] <- ggplot(hd_adherent, aes(x = first_hd_day)) +
+  geom_histogram(
+    breaks = hist(hd_adherent$first_hd_day, plot = FALSE)$breaks,
+    fill = "#fe6100",
+    color = "black"
+  ) +
+  scale_x_continuous( limits = c(0, 90),
+                      breaks = seq(0, 90, by = 10), expand = c(0, 1.5)) +
+  scale_y_continuous(breaks = scales::breaks_width(500), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title = "Distribution showing first day of HD treatment",
+    x = "First day of HD treatment",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(
+    title = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5)
+  )
 
-hist(summary_adherent$perc_hdf_after)
+summary_adherent_after <- hd_adherent %>%
+  filter(cens_time >= 90)#12,920
+
+plots[[2]] <- ggplot(summary_adherent_after, aes(x = perc_hd_after)) +
+  geom_histogram(
+    breaks = hist(summary_adherent_after$perc_hd_after, plot = FALSE)$breaks,
+    fill = "#fe6100",
+    color = "black"
+  ) +
+  scale_x_continuous( breaks = seq(0, 100, by = 20),
+                      labels = seq(0, 100, by = 20),
+                      limits = c(0, 100), expand = c(0, 1.5)) +
+  scale_y_continuous( breaks = scales::breaks_width(1000), expand = expansion(mult = c(0, 0.05))) +
+  labs(
+    title = "Distribution showing percentage of HD treatments after grace period",
+    x = "Percentage HD treatments after grace period",
+    y = "Frequency"
+  ) +
+  theme_minimal() + 
+  theme(
+    title = element_text(size = 20),
+    axis.title.x = element_text(size = 20),
+    axis.title.y = element_text(size = 20),
+    axis.text.x = element_text(size = 20),
+    axis.text.y = element_text(size = 20),
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 0.5)
+  )
+
+figure_hd <- wrap_plots(plots, nrow = 2) + 
+  plot_layout(guides = "collect") & plot_annotation(tag_levels = "A") & theme(plot.tag = element_text(size = 30))
+
+
+ggsave("figure_hd.pdf", figure_hd, width = 18, height = 18, dpi = 600)
 
 #describe trajectory of hdf clones----
 
@@ -443,7 +477,7 @@ grace_cohort <- grace_cohort %>%
 
 #note that not everyone will be in here because some left before 90 days
 year_cohort <- cohort_hd %>%
-  filter(days_from_fdd >90 & days_from_fdd <= cens_time & cens_time >= 346) %>%
+  filter(days_from_fdd >90 & days_from_fdd <= cens_time & cens_time >= 360) %>%
   mutate(
     year_period = case_when(
       days_from_fdd >= 346 & days_from_fdd <= 360 ~ 1,
@@ -551,7 +585,7 @@ cohort_hd_reduced <- bind_rows(grace_cohort, year_cohort) %>%
   #fill cens_reason again
   fill(cens_reason, facility_id, death_date, first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
        infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day, demo_esrd_cause_icd10text, demo_height,
-       demo_male, subgroup_zero, cens_time, subgroup_later,  death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid,  demo_race, country, age_cat, cci, treatment_clone, last_observed_date, education, .direction= "downup")%>%
+       demo_male, subgroup_zero, cens_time, subgroup_later,  death_reason_cardiovasc, death_reason_cardiac, death_reason_infect_incl_covid, death_reason_infect_excl_covid,  demo_race, country, age_cat, cci, treatment_clone, last_observed_date, education, .direction= "downup")%>%
   ungroup()
 
 #make visit variable
@@ -617,7 +651,7 @@ cohort_hd_reduced <- cohort_hd_incl_baseline %>%
          first_hosp, cardiac_hosp, cardiac_hosp_day, infect_hosp_excl_covid, infect_hosp_incl_covid,
          infect_hosp_excl_covid_day, infect_hosp_incl_covid_day, cardiovasc_hosp, cardiovasc_hosp_day,  demo_esrd_cause_icd10text, demo_height,
          country, age_cat, demo_male, days_from_fdd, treatment_clone, cens_time, cens_reason, 
-         death_reason_cardiovasc, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education)
+         death_reason_cardiovasc, death_reason_cardiac, death_reason_infect_incl_covid, death_reason_infect_excl_covid, cci, subgroup_later, cens_time, subgroup_zero, education)
 
 #save in between
 save(cohort_hd_reduced, file = paste0(path, "cohort_hd_reduced.Rdata"))
