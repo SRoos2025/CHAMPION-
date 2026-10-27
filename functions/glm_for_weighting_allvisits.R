@@ -1,7 +1,8 @@
-glm_for_weighting_allvisits <- function (i) {
-  dat_imp <- filter (data_unweighted, .imp == i)
+glm_for_weighting_allvisits <- function (i, data = data, outcome = "inf_cens == 0") {
+  dat_imp <- filter (data, .imp == i)
   
- glm(inf_cens == 0 ~ 
+ glm(
+   as.formula(paste0(outcome, "~ 
     #demographic
     age_cat + demo_male + education_cat_base +  
     #clinical
@@ -10,8 +11,9 @@ glm_for_weighting_allvisits <- function (i) {
     ultra_fil_rate + txt_per_week + catheter_1 + lab_wktv + txt_qb_mean +
     # lab
     lab_serum_na + lab_potassium + lab_phosph + lab_albumin + lab_crp +
-    lab_hgba1c + lab_calcium + lab_creatinine + lab_hgb + lab_pth + lab_bicarb + lab_ferritin, 
+    lab_hgba1c + lab_calcium + lab_creatinine + lab_hgb + lab_pth + lab_bicarb + lab_ferritin")), 
   data = dat_imp,
   family = binomial()
   )
 }
+
