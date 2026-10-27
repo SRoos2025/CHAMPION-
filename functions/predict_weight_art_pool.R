@@ -1,6 +1,6 @@
-predict_weight_art_pool <- function (i) {
+predict_weight_art_pool <- function (i, data = data) {
   #filter per imputation
-  dat_imp <- filter(data_unweighted, .imp == i)
+  dat_imp <- filter(data, .imp == i)
   
   dat_imp <- dat_imp %>%
     mutate(
