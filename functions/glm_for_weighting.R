@@ -1,5 +1,5 @@
-glm_for_weighting <- function (i) {
-  dat_imp <- filter(data_unweighted, .imp == i) # filter each imputed set
+glm_for_weighting <- function (i, data = data, outcome = "inf_cens == 0") {
+  dat_imp <- filter(data, .imp == i) # filter each imputed set
   
   #make model for chance of not being censored, inf_cens = 0
   map(visits, function(v) {
@@ -7,7 +7,7 @@ glm_for_weighting <- function (i) {
     
 
   glm(
-    inf_cens == 0 ~ 
+    as.formula(paste0(outcome, "~ 
       #demographic
       age_cat + demo_male + 
       education_cat_base +  
@@ -22,9 +22,10 @@ glm_for_weighting <- function (i) {
       lab_albumin + lab_crp +
       lab_hgba1c + 
       lab_calcium + lab_creatinine + lab_hgb + lab_pth + 
-      lab_bicarb + lab_ferritin, 
+      lab_bicarb + lab_ferritin")), 
   data = dat_imp_visit,
   family = binomial()
   )
   })
 }
+
