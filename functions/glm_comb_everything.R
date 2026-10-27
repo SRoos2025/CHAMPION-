@@ -1,9 +1,9 @@
-glm_comb_everything <- function (i) {
-  dat_imp <- filter(data_unweighted, .imp == i) # filter each imputed set
+glm_comb_everything <- function (i, data = data, outcome = "cens_combine") {
+  dat_imp <- filter(data, .imp == i) # filter each imputed set
 
     
     glm(
-      cens_combine == 0 ~ 
+      as.formula(paste0(outcome, "~ 
         #demographic
         age_cat + demo_male + 
         education_cat_base +  
@@ -18,8 +18,9 @@ glm_comb_everything <- function (i) {
         lab_albumin + lab_crp +
         lab_hgba1c + 
         lab_calcium + lab_creatinine + lab_hgb + lab_pth + 
-        lab_bicarb + lab_ferritin, 
+        lab_bicarb + lab_ferritin")), 
       data = dat_imp,
       family = binomial()
     )
   }
+
