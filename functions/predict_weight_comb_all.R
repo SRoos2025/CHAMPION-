@@ -1,6 +1,6 @@
-predict_weight_comb_all <- function (i) {
+predict_weight_comb_all <- function (i, data = data) {
   #filter per imputation
-  dat_imp <- filter(data_unweighted, .imp == i)
+  dat_imp <- filter(data, .imp == i)
   
 
       
@@ -14,3 +14,4 @@ predict_weight_comb_all <- function (i) {
           )
         )
     }
+
