@@ -1,6 +1,6 @@
-predict_weight_marginal <- function (i) {
+predict_weight_marginal_art <- function (i, data = data) {
   #filter per imputation
-  dat_imp <- filter(data_unweighted, .imp == i)
+  dat_imp <- filter(data, .imp == i)
   
   #map over visits and put in dataframe using bind rows
   bind_rows(
