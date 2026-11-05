@@ -1,0 +1,70 @@
+#weighting function for conventional strategy (not high-volume), mortality outcome, combined censoring
+#specify imps before !
+weight_mortality_conv_strategy_marginal <- function(data = data_ps) {
+  
+  visits <-  0:12 
+  
+  marg_fit <- map(imps, ~glm_marginal(i = .x, visits = visits, data = data_ps, outcome = "inf_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(marg_fit) <- paste0("imp_", imps)
+  
+  marg_fit <- map(marg_fit, function(.x) set_names(.x, visits))
+  
+  marg_list <- map(imps, ~predict_weight_marginal(i = .x, visits = visits, data = data_unweighted, marg_fit = marg_fit))
+  marg_list <- bind_rows(marg_list) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(prop_score_marg_inf = ps) %>%
+    select(-ps)
+  rm(marg_fit)
+  gc()
+  
+  visits <- 0:7 
+  marg_fit_art <- map(imps, ~glm_marginal(i = .x, data = data_unweighted, visits = visits, outcome = "art_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(marg_fit_art) <- paste0("imp_", imps)
+  
+  marg_fit_art <- map(marg_fit_art, function(.x) set_names(.x, visits))
+  
+  marg_list_art <- map(imps, ~predict_weight_marginal_art(i = .x, visits = visits, data = data_unweighted, marg_fit_art = marg_fit_art))
+  marg_list_art <- bind_rows(marg_list_art) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(prop_score_marg_art = ps) %>%
+    select(-ps)
+  
+  rm(marg_fit_art)
+  gc()
+  
+  
+  objects <- c("marg_list", "marg_list_art")
+  
+  #we can all left join these to data_unweighted
+  for(i in objects) {
+    data %<>%
+      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+  }
+  
+  data_ps <- data
+  
+  data_ps %<>%
+    group_by(id, .imp) %>%
+    mutate(
+      #now combine artificial and informative censoring
+      stab_ipcw_inf_cens = case_when(
+        inf_cens == 1 ~ prop_score_marg_inf/ (1- ps),
+        inf_cens == 0 ~ prop_score_marg_inf/ps),
+      stab_ipcw_art_cens = case_when(
+        art_cens == 1 ~ prop_score_marg_art/ (1- ps_art),
+        art_cens == 0 ~ prop_score_marg_art/ps_art),
+      stab_ipcw_art_cens = if_else(is.na(stab_ipcw_art_cens), 1, stab_ipcw_art_cens), #set missingness to 1, 
+      stab_combined = stab_ipcw_inf_cens * stab_ipcw_art_cens,
+      stab_combined_cumprod = cumprod(stab_combined),
+      stab_combined_cumprod = if_else(visit == 12, 1, stab_combined_cumprod)
+      #if wvisit 12 set weight to 1 as it does not add anything there
+    ) %>%
+    ungroup()
+  
+  return(data_ps)
+  
+}
