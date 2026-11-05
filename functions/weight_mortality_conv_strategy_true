@@ -1,0 +1,68 @@
+#weighting function for conventional strategy (not high-volume), mortality outcome, combined censoring
+#specify imps before !
+weight_mortality_conv_strategy_true <- function(data = data_unweighted) {
+  
+  visits <-  0:12 
+  fit_list <- map(imps, ~glm_for_weighting(i = .x, data = data_unweighted, visits = visits, outcome = "inf_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(fit_list) <- paste0("imp_", imps)
+  fit_list <- map(fit_list, function(.x) set_names(.x, visits))
+  
+  #predict propensity scores
+  ps_list <- map(imps, ~predict_weight(i= .x, visits = visits, data = data_unweighted, fit_list = fit_list)) #predict propensity scores for each imputation and put in list
+  ps_list <- bind_rows(ps_list) %>% #turn back to dataframe
+    select(c(unique_id, visit, .imp, ps)) #select unique id instead of id so it can be matched later on
+  rm(fit_list) #remove to clean working space
+  gc()
+  
+  visits <- 0:7
+  
+  fit_list_art <- map(imps, ~glm_for_weighting(i = .x, data = data_unweighted, visits = visits, outcome = "art_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(fit_list_art) <- paste0("imp_", imps)
+  
+  fit_list_art <- map(fit_list_art, function(.x) set_names(.x, visits))
+  
+  ps_list_art <- map(imps, ~predict_weight_art(i = .x, visits = visits, data = data_unweighted, fit_list_art = fit_list_art))
+  ps_list_art <- bind_rows(ps_list_art) %>%
+    mutate(ps_art = ps) %>%
+    select(c(unique_id, visit, .imp, ps_art))
+  rm(fit_list_art) #create workingspace
+  gc()
+  
+  
+  objects <- c("ps_list", "ps_list_art")
+  
+  #we can all left join these to data_unweighted
+  for(i in objects) {
+    data %<>%
+      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+  }
+  
+  data_ps <- data
+  
+  data_ps %<>%
+    group_by(id, .imp) %>%
+    mutate(
+      ipcw_inf_cens_true = case_when(
+        inf_cens == 1 ~ 1/ (1- ps),
+        inf_cens == 0 ~ 1/ps),
+      #then arificial censoring
+      ipcw_art_cens = case_when(
+        art_cens == 1 ~ 1/ (1- ps_art),
+        art_cens == 0 ~ 1/ps_art),
+      #artificial may be NA because this is only calculated over the first 7 visits, the rest should be 1 (so no effect)
+      ipcw_art_cens = if_else(is.na(ipcw_art_cens), 1, ipcw_art_cens), #set missingness to 1,
+      #now combine artificial and informative
+      combined_true_weights = ipcw_art_cens * ipcw_inf_cens_true,
+      #now cumulative product
+      combined_true_weights_cumprod = cumprod(combined_true_weights),
+      combined_true_weights_cumprod = if_else(visit == 12, 1, combined_true_weights_cumprod)#if wvisit 12 set weight to 1 as it does not add anything there
+    ) %>%
+    ungroup()
+  
+  return(data_ps)
+  
+}
