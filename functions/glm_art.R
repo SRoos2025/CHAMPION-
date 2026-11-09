@@ -8,7 +8,7 @@ glm_art <- function (i) {
     glm(
       art_cens == 0 ~ 
         #demographic
-        age_cat + demo_male + 
+        age_cat + demo_male + demo_region + 
         education_cat_base +  
         #clinical
         txt_pre_sbp + txt_pre_dbp + 
