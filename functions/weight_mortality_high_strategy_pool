@@ -1,0 +1,67 @@
+weight_mortality_high_strategy_pool <- function(data = data) {
+  
+  fit_list_pool <- map(imps, ~glm_for_weighting_allvisits(i = .x, data = data, outcome = "inf_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(fit_list_pool) <- paste0("imp_", imps)
+  
+  #note only works with argument new_data = dat_imp_visit within function predict weight
+  #this is maybe because some treatment clones have the same visits but there are also clones with visits that are not present within the other clone?
+  ps_list_pool <- map(imps, ~predict_weight_pool(i = .x, data = data, fit_list_pool = fit_list_pool))
+  ps_list_pool <-  bind_rows(ps_list_pool) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(ps_pool = ps) %>%
+    select(-ps)
+  
+  rm(fit_list_pool)
+  gc()
+  
+  #POOLED TRUE artificial weight
+  #now determine weights for artificial censoring
+  #note this is only in visits 0 up until 7, but we fix that later by setting NA's to 1 for visits after 7
+  
+  fit_list_art_pool <- map(imps, ~glm_for_weighting_allvisits(i = .x, data = data, outcome = "art_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(fit_list_art_pool) <- paste0("imp_", imps)
+  
+  ps_list_art_pool <- map(imps, ~predict_weight_art_pool(i = .x, data = data, fit_list_art_pool = fit_list_art_pool))
+  ps_list_art_pool <- bind_rows(ps_list_art_pool) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(ps_pool_art = ps) %>%
+    select(-ps)
+  
+  rm(fit_list_art_pool)
+  gc()
+  
+  objects <- c("ps_list_art_pool", "ps_list_pool")
+  
+  #we can all left join these to data_unweighted
+  for(i in objects) {
+    data %<>%
+      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+  }
+  
+  data_ps_high_volume <- data
+  
+  data_ps_high_volume %<>%
+    group_by(id, .imp) %>%
+    mutate(
+      ipcw_inf_cens_pool_true = case_when(
+        inf_cens == 1 ~ prop_score_marg_inf/ (1- ps_pool),
+        inf_cens == 0 ~ prop_score_marg_inf/ps_pool),
+      #now for artificial
+      ipcw_art_cens_pool = case_when(
+        art_cens == 1 ~ prop_score_marg_art/ (1- ps_pool_art),
+        art_cens == 0 ~ prop_score_marg_art/ps_pool_art),
+      ipcw_art_cens_pool = if_else(is.na(ipcw_art_cens_pool), 1, ipcw_art_cens_pool),
+      #now combine
+      combine_pool_visits = ipcw_inf_cens_pool_true * ipcw_art_cens_pool,
+      combine_pool_visits_cumprod = cumprod(combine_pool_visits),
+      combine_pool_visits_cumprod = if_else(visit == 12, 1, combine_pool_visits_cumprod)#if wvisit 12 set weight to 1 as it does not add anything there
+    ) %>%
+    ungroup()
+  
+  return(data_ps_high_volume)
+  
+}
