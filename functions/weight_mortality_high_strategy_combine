@@ -1,0 +1,65 @@
+weight_mortality_high_strategy_combine <- function(data = data) {
+  data %<>%
+    mutate(
+      cens_combine = if_else(inf_cens == 1 | art_cens == 1, 1, 0) #combined censoring if either informative or censoring is one at that row
+      #note this is per row, so we dont have to group by id
+    )
+  
+  visits <-  0:12 
+  
+  #determine probabilities for each visit within each imputation with generalized linear model
+  fit_list_comb <- map(imps, ~glm_for_weighting_comb(i = .x, data = data, visits = visits, outcome = "cens_combine == 0"))
+  #
+  #set the first names within this list to imp_
+  names(fit_list_comb) <- paste0("imp_", imps)
+  fit_list_comb <- map(fit_list_comb, function(.x) set_names(.x, visits))
+  
+  #predict propensity scores
+  ps_list_comb <- map(imps, ~predict_weight_comb(i = .x, visits = visits, data = data, fit_list_comb = fit_list_comb)) #predict propensity scores for each imputation and put in list
+  ps_list_comb <- bind_rows(ps_list_comb) %>% #turn back to dataframe
+    select(c(unique_id, visit, .imp, ps))%>% #select unique id instead of id so it can be matched later on
+    mutate(prop_score_comb = ps)%>%
+    select(-ps)
+  rm(fit_list_comb) #remove to clean working space
+  gc()
+  
+  marg_fit <- map(imps, ~glm_marginal(i = .x, visits = visits, data = data, outcome = "cens_combine == 0"))
+  
+  #set the first names within this list to imp_
+  names(marg_fit) <- paste0("imp_", imps)
+  
+  marg_fit <- map(marg_fit, function(.x) set_names(.x, visits))
+  
+  marg_list <- map(imps, ~predict_weight_marginal(i = .x, visits = visits, data = data, marg_fit = marg_fit))
+  marg_list <- bind_rows(marg_list) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(prop_score_marg = ps) %>%
+    select(-ps)
+  rm(marg_fit)
+  gc()
+  
+  objects <- c("marg_list", "ps_list_comb")
+  
+  #we can all left join these to data_unweighted
+  for(i in objects) {
+    data %<>%
+      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+  }
+  
+  data_ps_high_volume <- data
+  
+  data_ps_high_volume %<>%
+    group_by(id, .imp) %>%
+    mutate(
+      #now combine artificial and informative censoring
+      ipcw_inf_art = case_when(
+        cens_combine == 1 ~ prop_score_marg/(1-prop_score_comb),
+        cens_combine == 0 ~ prop_score_marg/prop_score_comb),
+      ipcw_inf_art_cumprod = cumprod(ipcw_inf_art),
+      ipcw_inf_art_cumprod = if_else(visit == 12, 1, ipcw_inf_art_cumprod)#if wvisit 12 set weight to 1 as it does not add anything there
+    ) %>%
+    ungroup()
+  
+  return(data_ps_high_volume)
+  
+}
