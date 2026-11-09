@@ -1,0 +1,68 @@
+weight_mortality_high_strategy_fixed <- function(data = data) {
+  
+  visits <- 0:12
+  fixed_fit <- map(imps, ~glm_fixed(i = .x, visits = visits, data = data, outcome = "inf_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(fixed_fit) <- paste0("imp_", imps)
+  
+  fixed_fit <- map(fixed_fit, function(.x) set_names(.x, visits))
+  
+  fixed_list <- map(imps, ~predict_weight_fixed(i = .x, visits = visits, data = data, fixed_fit = fixed_fit))
+  fixed_list <- bind_rows(fixed_list) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(prop_score_fixed = ps) %>%
+    select(-ps)
+  
+  rm(fixed_fit)
+  gc()
+  
+  #4.1fixed effects artificl weights----
+  visits <- 0:7
+  fixed_fit_art <- map(imps, ~glm_fixed(i = .x, visits = visits, data = data, outcome = "art_cens == 0"))
+  
+  #set the first names within this list to imp_
+  names(fixed_fit_art) <- paste0("imp_", imps)
+  
+  fixed_fit_art <- map(fixed_fit_art, function(.x) set_names(.x, visits))
+  
+  fixed_list_art <- map(imps, ~predict_weight_fixed_art(i = .x, visits = visits, data = data, fixed_fit_art = fixed_fit_art))
+  fixed_list_art <- bind_rows(fixed_list_art) %>%
+    select(c(unique_id, visit, .imp, ps)) %>%
+    mutate(prop_score_fixed_art = ps) %>%
+    select(-ps)
+  
+  rm(fixed_fit_art)
+  gc()
+  
+  objects <- c("fixed_list", "fixed_list_art")
+  
+  #we can all left join these to data_unweighted
+  for(i in objects) {
+    data %<>%
+      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+  }
+  
+  data_ps_high_volume <- data
+  
+  data_ps_high_volume %<>%
+    group_by(id, .imp) %>%
+    mutate(
+      fixed_ipcw_cens =  case_when(
+        inf_cens == 1 ~ prop_score_fixed/ (1- ps),
+        inf_cens == 0 ~ prop_score_fixed/ps),
+      #then artificial fixed
+      ipcw_art_fixed =  case_when(
+        art_cens == 1 ~ prop_score_fixed_art/ (1- ps_art),
+        art_cens == 0 ~ prop_score_fixed_art/ps_art),
+      ipcw_art_fixed = if_else(is.na(ipcw_art_fixed), 1, ipcw_art_fixed),
+      #now combined
+      fixed_combined = ipcw_art_fixed * fixed_ipcw_cens,
+      fixed_combined_cumprod = cumprod(fixed_combined),
+      fixed_combined_cumprod = if_else(visit == 12, 1, fixed_combined_cumprod)
+    ) %>%
+    ungroup()
+  
+  return(data_ps_high_volume)
+  
+}
