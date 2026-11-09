@@ -1,11 +1,11 @@
-glm_comb_everything <- function (i, data = data, outcome = "cens_combine") {
+glm_comb_everything <- function (i, data = data, outcome = "cens_combine ==0") {
   dat_imp <- filter(data, .imp == i) # filter each imputed set
 
     
     glm(
       as.formula(paste0(outcome, "~ 
         #demographic
-        age_cat + demo_male + 
+        age_cat + demo_male + demo_region + 
         education_cat_base +  
         #clinical
         txt_pre_sbp + txt_pre_dbp + 
@@ -23,4 +23,3 @@ glm_comb_everything <- function (i, data = data, outcome = "cens_combine") {
       family = binomial()
     )
   }
-
