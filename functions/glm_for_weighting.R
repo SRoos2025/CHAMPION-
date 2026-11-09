@@ -1,4 +1,4 @@
-glm_for_weighting <- function (i, data = data, outcome = "inf_cens == 0") {
+glm_for_weighting <- function (i, data = data, visits = visits, outcome = "inf_cens == 0") {
   dat_imp <- filter(data, .imp == i) # filter each imputed set
   
   #make model for chance of not being censored, inf_cens = 0
@@ -9,7 +9,7 @@ glm_for_weighting <- function (i, data = data, outcome = "inf_cens == 0") {
   glm(
     as.formula(paste0(outcome, "~ 
       #demographic
-      age_cat + demo_male + 
+      age_cat + demo_male + demo_region + 
       education_cat_base +  
       #clinical
       txt_pre_sbp + txt_pre_dbp + 
@@ -28,4 +28,3 @@ glm_for_weighting <- function (i, data = data, outcome = "inf_cens == 0") {
   )
   })
 }
-
