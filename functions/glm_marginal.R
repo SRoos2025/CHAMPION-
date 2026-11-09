@@ -1,4 +1,4 @@
-glm_marginal <-  function (i, data = data, outcome = "inf_cens == 0") {
+glm_marginal <-  function (i, visits = visits, data = data, outcome = "inf_cens == 0") {
   dat_imp <- filter(data, .imp == i) # filter each imputed set
   
   #make model for chance of not being censored, inf_cens = 0
@@ -12,5 +12,3 @@ glm_marginal <-  function (i, data = data, outcome = "inf_cens == 0") {
     )
   })
 }
-
-
