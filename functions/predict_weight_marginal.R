@@ -1,4 +1,4 @@
-predict_weight_marginal <- function (i, data = data) {
+predict_weight_marginal <- function (i, visits = visits, data = data, marg_fit = marg_fit) {
   #filter per imputation
   dat_imp <- filter(data, .imp == i)
   
@@ -20,4 +20,3 @@ predict_weight_marginal <- function (i, data = data) {
     })
   )
 }
-
