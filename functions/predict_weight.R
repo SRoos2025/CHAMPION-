@@ -1,4 +1,4 @@
-predict_weight <- function (i, data = data) {
+predict_weight <- function (i, data = data, visits = visits, fit_list = fit_list) {
   #filter per imputation
   dat_imp <- filter(data, .imp == i)
   
