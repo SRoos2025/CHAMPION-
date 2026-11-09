@@ -1,4 +1,4 @@
-#weighting function for conventional strategy (not high-volume), mortality outcome, combined censoring
+#weighting function for conventional strategy (not high-volume), mortality outcome
 #specify imps before !
 weight_mortality_conv_strategy_true <- function(data = data_unweighted) {
   
