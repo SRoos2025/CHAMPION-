@@ -4,7 +4,7 @@ glm_for_weighting_allvisits <- function (i, data = data, outcome = "inf_cens == 
  glm(
    as.formula(paste0(outcome, "~ 
     #demographic
-    age_cat + demo_male + education_cat_base +  
+    age_cat + demo_male + education_cat_base + demo_region + 
     #clinical
     txt_pre_sbp + txt_pre_dbp + cci + bmi +
     #dialysis related
@@ -16,4 +16,3 @@ glm_for_weighting_allvisits <- function (i, data = data, outcome = "inf_cens == 
   family = binomial()
   )
 }
-
