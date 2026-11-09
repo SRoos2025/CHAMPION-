@@ -1,0 +1,38 @@
+weight_mortality_high_strategy_combine_all <- function(data = data) {
+  
+  fit_comb_all <- map(imps, ~glm_comb_everything(i = .x, data = data, outcome = "cens_combine == 0"))
+  names(fit_comb_all) <- paste0("imp_", imps)
+  
+  ps_list_comb_all <- map(imps, ~predict_weight_comb_all(i = .x, data = data, fit_comb_all = fit_comb_all)) #predict propensity scores for each imputation and put in list
+  ps_list_comb_all <- bind_rows(ps_list_comb_all) %>% #turn back to dataframe
+    select(c(unique_id, visit, .imp, ps))%>% #select unique id instead of id so it can be matched later on
+    mutate(prop_score_comb_all = ps)%>%
+    select(-ps)
+  rm(fit_comb_all) #remove to clean working space
+  gc()
+  
+  
+  objects <- c("ps_list_comb_all")
+  
+  #we can all left join these to data_unweighted
+  for(i in objects) {
+    data %<>%
+      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+  }
+  
+  data_ps_high_volume <- data
+  
+  data_ps_high_volume %<>%
+    group_by(id, .imp) %>%
+    mutate(
+      ipcw_inf_art_all_visit = case_when(
+        cens_combine == 1 ~ prop_score_marg/(1-prop_score_comb_all),
+        cens_combine == 0 ~ prop_score_marg/prop_score_comb_all),
+      ipcw_inf_art_all_visit_cumprod = cumprod(ipcw_inf_art_all_visit),
+      ipcw_inf_art_all_visit_cumprod = if_else(visit == 12, 1, ipcw_inf_art_all_visit_cumprod)#if wvisit 12 set weight to 1 as it does not add anything there
+    ) %>%
+    ungroup()
+  
+  return(data_ps_high_volume)
+  
+}
