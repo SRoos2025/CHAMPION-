@@ -1,4 +1,4 @@
-predict_weight_pool <- function (i, data = data) {
+predict_weight_pool <- function (i, data = data, fit_list_pool = fit_list_pool) {
   #filter per imputation
   dat_imp <- filter(data, .imp == i)
   
