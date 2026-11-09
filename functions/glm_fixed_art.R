@@ -7,7 +7,7 @@ glm_fixed_art <-  function (i) {
     
     glm(
       art_cens == 0 ~  #only fixed effects #demographic
-        age_cat + demo_male + education_cat_base +  
+        age_cat + demo_male + education_cat_base +  demo_region + 
         #clinical
         cci,
       data = dat_imp_visit,
