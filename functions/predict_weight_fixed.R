@@ -1,4 +1,4 @@
-predict_weight_fixed <- function (i, data = data) {
+predict_weight_fixed <- function (i, visits = visits,  data = data, fixed_fit = fixed_fit) {
   #filter per imputation
   dat_imp <- filter(data, .imp == i)
   
@@ -20,4 +20,3 @@ predict_weight_fixed <- function (i, data = data) {
     })
   )
 }
-
