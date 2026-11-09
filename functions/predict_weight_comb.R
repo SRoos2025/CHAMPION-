@@ -1,4 +1,4 @@
-predict_weight_comb <- function (i, data = data) {
+predict_weight_comb <- function (i, data = data, visits = visits, fit_list_comb = fit_list_comb) {
   #filter per imputation
   dat_imp <- filter(data, .imp == i)
   
@@ -20,4 +20,3 @@ predict_weight_comb <- function (i, data = data) {
     })
   )
 }
-
