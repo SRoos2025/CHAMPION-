@@ -1,0 +1,158 @@
+bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
+  
+  boots <- lapply(1:b, \(x){
+    
+    fname <- paste0(path, "output", x, ".Rdata")
+    
+    #skip if already perfomred
+    if (file.exists(fname)) {
+      return(NULL)
+    }
+    
+    studynrs <- unique(data[["id"]]) #get al studynumbers of the data and put in a vector
+    
+    #set seed so sampling can be repeated
+    set.seed(x)
+    
+    #get random ID's, with replacement to get identical sample sizes
+    indeces <- sample(studynrs, length(studynrs), replace = TRUE) 
+    
+    dat_samp <- tibble(id = indeces)%>%
+      mutate(boot_id = row_number()) 
+    # Join imputed data
+    # We expect many-to-many because replacement duplicates studynrs in x and imputations duplicate studynrs in y
+    dat_samp <- left_join(dat_samp, data, by = "id", 
+                          relationship = "many-to-many") %>%
+      mutate(
+        boot_unique_id = paste0(boot_id, treatment_clone)#create new ID so cox model can still treat these as different ID's even if sampling is done twice for an ID
+      )
+    
+    #define imps
+    
+    
+    dat_samp %>%
+      arrange(boot_unique_id, .imp, visit) %>%
+      select(-unique_id)
+    
+    gc()
+    
+    #apply weighting combining informative and artifical censoring and stabilizing with marginal probability
+    data_ps <- weight_mortality_conv_strategy_combine(data = dat_samp)
+    
+    gc()
+    
+    #hazard ratio 5 years
+    obj_five <- mean(do.call("c", lapply(1:10, \(x){
+      fit <- cox_mort_boot(filter(data_ps, .imp == x), ipcw = "ipcw_inf_art_cumprod")
+      return(exp(fit$coefficients[["treatment_clonehdf"]]))
+    })))
+    
+    list_five <- lapply(1:10, \(x){
+      fit_curve <- survfit(Surv(t_start, t_stop, death_outcome) ~ treatment_clone,
+      data = filter(data_ps, .imp == x),
+      weights = ipcw_inf_art_cumprod)
+    })
+    
+    
+    #repeat for 4 years (1461 days)
+    data_ps <- data_ps
+    arrange(boot_unique_id, .imp, visit) %>%
+      group_by(boot_unique_id, .imp) %>%
+      mutate(
+        remove = if_else(t_stop >= 1461, 1, 0),
+        remove_ind = max(remove) # make indicator for that individual that is filled for each row
+        ) %>%
+          filter(remove != 1) %>% #remove last row in which tstop > 1461
+         mutate(
+           last_row = is.na(lead(days_from_fdd)), #determine again what the last row is, now that some last rows after 4 years have been removed
+           t_stop = if_else(last_row & remove_ind == 1, 1461, t_stop) #if the last row has been removed (so remove_indicator is 1), and now is the last row, set to 1461
+         ) %>%
+      ungroup() %>%
+      select(-c(remove, remove_ind))
+       #note that the death outcome is now also 0 because it was only 1 at the last row which has now been removed
+    
+    gc()
+    
+    
+    obj_four <- mean(do.call("c", lapply(1:10, \(x){
+      fit <- cox_mort_boot(filter(data_ps, .imp == x), ipcw = "ipcw_inf_art_cumprod")
+      return(exp(fit$coefficients[["treatment_clonehdf"]]))
+    })))
+    
+    #repeat for 3 years (1096 days)
+    data_ps <- data_ps
+    arrange(boot_unique_id, .imp, visit) %>%
+      group_by(boot_unique_id, .imp) %>%
+      mutate(
+        remove = if_else(t_stop >= 1096, 1, 0),
+        remove_ind = max(remove) # make indicator for that individual that is filled for each row
+      ) %>%
+      filter(remove != 1) %>% #remove last row in which tstop > 1461
+      mutate(
+        last_row = is.na(lead(days_from_fdd)), #determine again what the last row is, now that some last rows after 4 years have been removed
+        t_stop = if_else(last_row & remove_ind == 1, 1096, t_stop) #if the last row has been removed (so remove_indicator is 1), and now is the last row, set to 1461
+      ) %>%
+      ungroup() %>%
+      select(-c(remove, remove_ind))
+    #note that the death outcome is now also 0 because it was only 1 at the last row which has now been removed
+    
+    
+    obj_three <- mean(do.call("c", lapply(1:10, \(x){
+      fit <- cox_mort_boot(filter(data_ps, .imp == x), ipcw = "ipcw_inf_art_cumprod")
+      return(exp(fit$coefficients[["treatment_clonehdf"]]))
+    })))
+    
+    #repeat for 2 years (731 days)
+    data_ps <- data_ps
+    arrange(boot_unique_id, .imp, visit) %>%
+      group_by(boot_unique_id, .imp) %>%
+      mutate(
+        remove = if_else(t_stop >= 731, 1, 0),
+        remove_ind = max(remove) # make indicator for that individual that is filled for each row
+      ) %>%
+      filter(remove != 1) %>% #remove last row in which tstop > 1461
+      mutate(
+        last_row = is.na(lead(days_from_fdd)), #determine again what the last row is, now that some last rows after 4 years have been removed
+        t_stop = if_else(last_row & remove_ind == 1, 731, t_stop) #if the last row has been removed (so remove_indicator is 1), and now is the last row, set to 1461
+      ) %>%
+      ungroup() %>%
+      select(-c(remove, remove_ind))
+    #note that the death outcome is now also 0 because it was only 1 at the last row which has now been removed
+    
+    
+    obj_two <- mean(do.call("c", lapply(1:10, \(x){
+      fit <- cox_mort_boot(filter(data_ps, .imp == x), ipcw = "ipcw_inf_art_cumprod")
+      return(exp(fit$coefficients[["treatment_clonehdf"]]))
+    })))
+    
+    #repeat for 1 year (365 days)
+    data_ps <- data_ps
+    arrange(boot_unique_id, .imp, visit) %>%
+      group_by(boot_unique_id, .imp) %>%
+      mutate(
+        remove = if_else(t_stop >= 365, 1, 0),
+        remove_ind = max(remove) # make indicator for that individual that is filled for each row
+      ) %>%
+      filter(remove != 1) %>% #remove last row in which tstop > 1461
+      mutate(
+        last_row = is.na(lead(days_from_fdd)), #determine again what the last row is, now that some last rows after 4 years have been removed
+        t_stop = if_else(last_row & remove_ind == 1, 365, t_stop) #if the last row has been removed (so remove_indicator is 1), and now is the last row, set to 1461
+      ) %>%
+      ungroup() %>%
+      select(-c(remove, remove_ind))
+    #note that the death outcome is now also 0 because it was only 1 at the last row which has now been removed
+    
+    obj_one <- mean(do.call("c", lapply(1:10, \(x){
+      fit <- cox_mort_boot(filter(data_ps, .imp == x), ipcw = "ipcw_inf_art_cumprod")
+      return(exp(fit$coefficients[["treatment_clonehdf"]]))
+    })))
+    
+    
+    output <- list(list_five, obj_five, obj_four, obj_three, obj_two, obj_one)
+    
+    
+    save(output, file = paste0(path, "output", x, ".Rdata"))
+    gc()
+    
+  })
+}
