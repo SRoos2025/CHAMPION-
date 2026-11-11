@@ -1,0 +1,12 @@
+# we dont have to specify robust SE as we will use bootstrapping to determine confidence interval
+cox_mort_boot <- function(data,  ipcw = "ipcw") {
+  lhs <- "Surv(t_start, t_stop, death_outcome) ~"
+  rhs <- "treatment_clone"
+  
+  fit <- coxph(as.formula(paste0(lhs, rhs)), data = data,
+               weights = data[[ipcw]],
+               cluster = boot_unique_id) #specify for each boot id
+  
+  return(fit)
+}
+              
