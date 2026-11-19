@@ -1,0 +1,9 @@
+extract_hr <- function( b = 100, hr_pos, path = path){
+  
+  vec <- sapply(1:b, \(x){
+    load(paste0(path, "output", x, ".Rdata"))
+    return(output[[hr_pos]])
+  })
+  
+  return(vec)
+}
