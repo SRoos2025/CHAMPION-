@@ -1,4 +1,4 @@
-bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
+bootstrap_mort <- function(data = data, outcome, b = 100, path = "..."){
   
   boots <- lapply(1:b, \(x){
     
@@ -18,7 +18,7 @@ bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
     indeces <- sample(studynrs, length(studynrs), replace = TRUE) 
     
     dat_samp <- tibble(id = indeces)%>%
-      mutate(boot_id = row_number()) 
+      mutate(boot_id = row_number())#create unique boot id, because studynrs could be resampled more than once 
     # Join imputed data
     # We expect many-to-many because replacement duplicates studynrs in x and imputations duplicate studynrs in y
     dat_samp <- left_join(dat_samp, data, by = "id", 
@@ -30,7 +30,7 @@ bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
     #define imps
     
     
-    dat_samp %>%
+    dat_samp <- dat_samp %>%
       arrange(boot_unique_id, .imp, visit) %>%
       select(-unique_id)
     
@@ -55,7 +55,7 @@ bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
     
     
     #repeat for 4 years (1461 days)
-    data_ps <- data_ps
+    data_ps <- data_ps %>%
     arrange(boot_unique_id, .imp, visit) %>%
       group_by(boot_unique_id, .imp) %>%
       mutate(
@@ -80,7 +80,7 @@ bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
     })))
     
     #repeat for 3 years (1096 days)
-    data_ps <- data_ps
+    data_ps <- data_ps %>%
     arrange(boot_unique_id, .imp, visit) %>%
       group_by(boot_unique_id, .imp) %>%
       mutate(
@@ -103,7 +103,7 @@ bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
     })))
     
     #repeat for 2 years (731 days)
-    data_ps <- data_ps
+    data_ps <- data_ps %>%
     arrange(boot_unique_id, .imp, visit) %>%
       group_by(boot_unique_id, .imp) %>%
       mutate(
@@ -126,7 +126,7 @@ bootstrap_mort <- function(data = data, outcome, b = 100, path = "definepath"){
     })))
     
     #repeat for 1 year (365 days)
-    data_ps <- data_ps
+    data_ps <- data_ps %>%
     arrange(boot_unique_id, .imp, visit) %>%
       group_by(boot_unique_id, .imp) %>%
       mutate(
