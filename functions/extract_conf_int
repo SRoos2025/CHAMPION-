@@ -1,0 +1,5 @@
+extract_conf_int <- function(vec){
+  bi <- quantile(vec, probs = c(0.025, 0.975))
+  
+  return(bi)
+}
