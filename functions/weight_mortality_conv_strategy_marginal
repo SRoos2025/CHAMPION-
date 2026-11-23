@@ -1,16 +1,16 @@
 #weighting function for conventional strategy (not high-volume), mortality outcome, stabilized with marginal probability of censoring
-weight_mortality_conv_strategy_marginal <- function(data = data_ps) {
+weight_mortality_conv_strategy_marginal <- function(data = data, outcome_inf = "inf_cens == 0", cens_var = "inf_cens") {
   
   visits <-  0:12 
   
-  marg_fit <- map(imps, ~glm_marginal(i = .x, visits = visits, data = data_ps, outcome = "inf_cens == 0"))
+  marg_fit <- map(imps, ~glm_marginal(i = .x, visits = visits, data = data, outcome = outcome_inf))
   
   #set the first names within this list to imp_
   names(marg_fit) <- paste0("imp_", imps)
   
   marg_fit <- map(marg_fit, function(.x) set_names(.x, visits))
   
-  marg_list <- map(imps, ~predict_weight_marginal(i = .x, visits = visits, data = data_ps, marg_fit = marg_fit))
+  marg_list <- map(imps, ~predict_weight_marginal(i = .x, visits = visits, data = data, marg_fit = marg_fit))
   marg_list <- bind_rows(marg_list) %>%
     select(c(unique_id, visit, .imp, ps)) %>%
     mutate(prop_score_marg_inf = ps) %>%
@@ -19,14 +19,14 @@ weight_mortality_conv_strategy_marginal <- function(data = data_ps) {
   gc()
   
   visits <- 0:7 
-  marg_fit_art <- map(imps, ~glm_marginal(i = .x, data = data_ps, visits = visits, outcome = "art_cens == 0"))
+  marg_fit_art <- map(imps, ~glm_marginal(i = .x, data = data, visits = visits, outcome = "art_cens == 0"))
   
   #set the first names within this list to imp_
   names(marg_fit_art) <- paste0("imp_", imps)
   
   marg_fit_art <- map(marg_fit_art, function(.x) set_names(.x, visits))
   
-  marg_list_art <- map(imps, ~predict_weight_marginal_art(i = .x, visits = visits, data = data_ps, marg_fit_art = marg_fit_art))
+  marg_list_art <- map(imps, ~predict_weight_marginal_art(i = .x, visits = visits, data = data, marg_fit_art = marg_fit_art))
   marg_list_art <- bind_rows(marg_list_art) %>%
     select(c(unique_id, visit, .imp, ps)) %>%
     mutate(prop_score_marg_art = ps) %>%
@@ -47,12 +47,12 @@ weight_mortality_conv_strategy_marginal <- function(data = data_ps) {
   data_ps_high_volume <- data
   
   data_ps_high_volume %<>%
-    group_by(id, .imp) %>%
+    group_by(unique_id, .imp) %>%
     mutate(
       #now combine artificial and informative censoring
       stab_ipcw_inf_cens = case_when(
-        inf_cens == 1 ~ prop_score_marg_inf/ (1- ps),
-        inf_cens == 0 ~ prop_score_marg_inf/ps),
+        .data[[cens_var]] == 1 ~ prop_score_marg_inf/ (1- ps),
+        .data[[cens_var]] == 0 ~ prop_score_marg_inf/ps),
       stab_ipcw_art_cens = case_when(
         art_cens == 1 ~ prop_score_marg_art/ (1- ps_art),
         art_cens == 0 ~ prop_score_marg_art/ps_art),
