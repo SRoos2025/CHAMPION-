@@ -1,0 +1,4 @@
+#get inverse of clogloglink
+inv_cloglog <- function(x) {
+  1 - exp(-exp(x))
+}
