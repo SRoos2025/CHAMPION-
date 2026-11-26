@@ -35,9 +35,11 @@ bootstrap_hosp_high <- function(data = data, outcome, b = 100, path = "..."){
       select(-unique_id)
     
     gc()
+    #first get the true data, which is needed to stabilize on later
+    data_ps <- weight_conv_strategy_true(data = dat_samp, outcome_inf = "inf_cens_incl_death ==0", cens_var = "inf_cens_incl_death", ident = "boot_unique_id")
     
     #apply weighting combining informative and artifical censoring and stabilizing with marginal probability
-    data_ps <- weight_mortality_conv_strategy_marginal(data = dat_samp, outcome_inf = "inf_cens_incl_death ==0", cens_var = "inf_cens_incl_death", ident = "boot_unique_id")
+    data_ps <- weight_mortality_conv_strategy_marginal(data = data_ps, outcome_inf = "inf_cens_incl_death ==0", cens_var = "inf_cens_incl_death", ident = "boot_unique_id")
     
     gc()
     
