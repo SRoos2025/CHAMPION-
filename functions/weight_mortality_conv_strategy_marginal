@@ -1,5 +1,5 @@
 #weighting function for conventional strategy (not high-volume), mortality outcome, stabilized with marginal probability of censoring
-weight_mortality_conv_strategy_marginal <- function(data = data, outcome_inf = "inf_cens == 0", cens_var = "inf_cens") {
+weight_mortality_conv_strategy_marginal <- function(data = data, outcome_inf = "inf_cens == 0", cens_var = "inf_cens", ident = "boot_unique_id") {
   
   visits <-  0:12 
   
@@ -12,7 +12,7 @@ weight_mortality_conv_strategy_marginal <- function(data = data, outcome_inf = "
   
   marg_list <- map(imps, ~predict_weight_marginal(i = .x, visits = visits, data = data, marg_fit = marg_fit))
   marg_list <- bind_rows(marg_list) %>%
-    select(c(unique_id, visit, .imp, ps)) %>%
+    select(c(.data[[ident]], visit, .imp, ps)) %>%
     mutate(prop_score_marg_inf = ps) %>%
     select(-ps)
   rm(marg_fit)
@@ -28,7 +28,7 @@ weight_mortality_conv_strategy_marginal <- function(data = data, outcome_inf = "
   
   marg_list_art <- map(imps, ~predict_weight_marginal_art(i = .x, visits = visits, data = data, marg_fit_art = marg_fit_art))
   marg_list_art <- bind_rows(marg_list_art) %>%
-    select(c(unique_id, visit, .imp, ps)) %>%
+    select(c(.data[[ident]], visit, .imp, ps)) %>%
     mutate(prop_score_marg_art = ps) %>%
     select(-ps)
   
@@ -38,16 +38,16 @@ weight_mortality_conv_strategy_marginal <- function(data = data, outcome_inf = "
   
   objects <- c("marg_list", "marg_list_art")
   
-  #we can all left join these to data_unweighted
+  #we can all left join these to input data
   for(i in objects) {
     data %<>%
-      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+      left_join(get(i), by = c(ident, ".imp", "visit"))
   }
   
   data_ps_high_volume <- data
   
   data_ps_high_volume %<>%
-    group_by(unique_id, .imp) %>%
+    group_by(.data[[ident]], .imp) %>%
     mutate(
       #now combine artificial and informative censoring
       stab_ipcw_inf_cens = case_when(
