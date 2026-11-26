@@ -1,0 +1,15 @@
+#function which creates list of dataframes, one for each of the 100 bootstraps
+#in this function, function "get_rmst" is nested, which will get the mean of each of the 10 imputations within each bootstrap
+extract_boot_rmst <- function(b = 100, path = path){
+  
+  #get a list of datafrmaes containing rmst_hd and rmst_hdf
+  vec <- lapply(1:b, \(x){
+    load(paste0(path, "output", x, ".Rdata"))
+    fit_tmp <- output[[1]]
+    rmst<- get_rmst(fit_tmp = fit_tmp)
+    return(rmst)
+  })
+  
+  return(vec)
+  
+}
