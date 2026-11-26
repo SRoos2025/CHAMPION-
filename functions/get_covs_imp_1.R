@@ -11,7 +11,7 @@ get_covs_imp_1 <- function (data) {
                   #clinical
                   "txt_pre_sbp", "txt_pre_dbp" , "cci" , "bmi" ,
                   #dialysis related
-                  "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" ,
+                  "ultra_fil_rate" , "txt_per_week" , "catheter_1" , "lab_wktv" , "txt_qb_mean" , "demo_region",
                   # lab
                   "lab_serum_na" , "lab_potassium" , "lab_phosph" , "lab_albumin" , "lab_crp" ,
                   
