@@ -1,0 +1,26 @@
+#function to get the estimates for each t within all the 10 imputations within each bootstrap
+get_surv_estimates <- function(fit_tmp = fit_tmp){
+    
+    # Extract estimates from all imputations
+    surv_all <- map_dfr(seq_along(fit_tmp), \(x) {
+      
+      summary(fit_tmp[[x]], data.frame = TRUE) %>%
+        select(time, surv, strata) %>%
+        mutate(
+          surv_trans = clogloglink(surv), #make complementary log log transformatin as survival probbility is not normally distributed which is needed for rubin's rules
+          #see also https://towardsdatascience.com/a-gentle-introduction-to-complementary-log-log-regression-8ac3c5c1cd83/ by Akif Mustafa
+          imp = x
+        )
+    })
+    
+    # Pool point estimates across imputations
+    surv_pooled <- surv_all %>%
+      group_by(time, strata) %>%
+      summarise(
+        mean_trans = mean(surv_trans), #take mean of transfmored
+        surv_pooled = inv_cloglog(mean_trans), #take inverse (selfmade function)
+      ) %>%
+      ungroup()
+    
+    return(surv_pooled)
+}
