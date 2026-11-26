@@ -1,0 +1,18 @@
+#function to get the mean rmst of both hdf and hd within all the 10 imputations within each bootstrap
+get_rmst <- function(fit_tmp = fit_tmp){
+  
+rmst_hd <- mean(sapply(1:10, \(x){ #take the mean of this function for each imputation
+     rmst <- survival:::survmean(fit_tmp[[x]], rmean = 1826) #get the rmean for 5 years == 1826 days #note a matrix is created
+     #r_mean_hdf <- rmst[["matrix"]]["treatment_clone=hdf","rmean"]
+    r_mean_hd <- rmst[["matrix"]]["treatment_clone=hd", "rmean"] #extract from this matrix the rmean values only
+    return(r_mean_hd)
+    }))
+
+rmst_hdf <- mean(sapply(1:10, \(x){
+  rmst <- survival:::survmean(fit_tmp[[x]], rmean = 1826)
+  r_mean_hdf <- rmst[["matrix"]]["treatment_clone=hdf","rmean"]
+  return(r_mean_hdf)
+}))
+
+return(data.frame(rmst_hd,rmst_hdf)) #return a dataframe with rmst_hd and rmst_dhf as column names
+}
