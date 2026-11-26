@@ -1,6 +1,6 @@
 #13.0 inspecting_weights
 #by S. Roos
-#last updated on 23-11-2026
+#last updated on 09-11-2026
 #we use the data with both clones and only imputed data ranging from .imp 1 to .imp 10, as created in 11-v2-imputation
 #0. set up----
 ##load packages----
@@ -439,6 +439,7 @@ gc()
 
 
 
+
 #for hospitalization outcomes----
 load(paste0(path, "data_ps_hosp.Rdata"))
 
@@ -862,6 +863,7 @@ gc()
 
 
 
+
 #for mortality within high-volume strategy----
 load(paste0(path, "data_ps_high_volume.Rdata"))
 
@@ -1256,8 +1258,11 @@ gc()
 
 
 
+
 #for hospitalization within high-volume strategy----
-load(paste0(path, "data_ps_high_volume_hosp.Rdata"))
+load(paste0(path, "data_ps_hosp_high.Rdata"))
+
+data_ps_high_volume_hosp <- data_ps_hosp_high #rename
 
 #we select first imputation
 covs <- get_covs_imp_1(data = data_ps_high_volume_hosp)
@@ -1276,7 +1281,7 @@ windowsFonts(
 #with differences for informative censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["cens_combine_incl_death"]], #differences in informative censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in informative censoring yes or no
   weights  = imp_1[["combined_true_weights"]], #take the combined true weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
@@ -1307,7 +1312,7 @@ ggsave("plot_true_treat_high_hosp.pdf", plot, width = 19, height = 22, dpi = 120
 plot <- list()
 plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "ps", inf_cens = "inf_cens_incl_death")
 
-plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "ps", weight = "ipcw_inf_cens_true")
+plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "ps", weight = "combined_true_weights")
 
 figure_1 <- wrap_plots(plot, ncol = 2) + 
   plot_annotation(tag_levels = "A") + 
@@ -1315,17 +1320,23 @@ figure_1 <- wrap_plots(plot, ncol = 2) +
   theme(legend.position = "bottom")
 ggsave("distr_true_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200)
 
-#artificial des not have to be repeated, is same as mortality for high volume
+#artificial 
+plot_art <- list()
+plot_art[[1]]<- plot_ipcw_visit_unweighted(data = first_visit, ps = "ps_art", inf_cens = "art_cens", text_null = "No artificial censoring", text_one = "Artificial censoring")
 
-rm(plot)
-rm(plot_art)
-gc()
+plot_art[[2]]<- plot_ipcw_visit_weighted(data = first_visit, ps = "ps_art", weight = "combined_true_weights", inf_cens = "art_cens", text_null = "No artificial censoring", text_one = "Artificial censoring")
+
+figure_1 <- wrap_plots(plot_art, ncol = 2) + 
+  plot_annotation(tag_levels = "A") +
+  plot_layout(guides = "collect") & #only take one legend
+  theme(legend.position = "bottom")
+ggsave("distr_art_true_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200)
 
 #HH2.0 now stabilized with marginal probability----
 #with differences for informative censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["cens_combine_incl_death"]], #differences in informative censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in informative censoring yes or no
   weights  = imp_1[["stab_combined"]], #take the combined true weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
@@ -1357,7 +1368,7 @@ plot <- list()
 plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "ps", inf_cens = "inf_cens_incl_death")
 
 
-plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "ps", weight = "stab_ipcw_inf_cens")
+plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "ps", weight = "stab_combined")
 
 figure_1 <- wrap_plots(plot, ncol = 2) + 
   plot_annotation(tag_levels = "A") + 
@@ -1365,13 +1376,23 @@ figure_1 <- wrap_plots(plot, ncol = 2) +
   theme(legend.position = "bottom")
 ggsave("distr_stab_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200)
 
-#artificial not needed
+#artificial
+plot_art <- list()
+plot_art[[1]]<- plot_ipcw_visit_unweighted(data = first_visit, ps = "ps_art", inf_cens = "art_cens", text_null = "No artificial censoring", text_one = "Artificial censoring")
+
+plot_art[[2]]<- plot_ipcw_visit_weighted(data = first_visit, ps = "ps_art", weight = "stab_combined", inf_cens = "art_cens", text_null = "No artificial censoring", text_one = "Artificial censoring")
+
+figure_1 <- wrap_plots(plot_art, ncol = 2) + 
+  plot_annotation(tag_levels = "A") +
+  plot_layout(guides = "collect") & #only take one legend
+  theme(legend.position = "bottom")
+ggsave("distr_art_stab_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200)
 
 #HH3.0fixed---- 
 #with differences for informative censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["cens_combine_incl_death"]], #differences in informative censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in informative censoring yes or no
   weights  = imp_1[["fixed_combined"]], #take the combined true weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
@@ -1402,7 +1423,7 @@ ggsave("plot_fixed_treat_high_hosp.pdf", plot, width = 19, height = 22, dpi = 12
 plot <- list()
 plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "ps", inf_cens = "inf_cens_incl_death")
 
-plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "ps", weight = "fixed_ipcw_cens")
+plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "ps", weight = "fixed_combined")
 
 figure_1 <- wrap_plots(plot, ncol = 2) + 
   plot_annotation(tag_levels = "A") + 
@@ -1410,12 +1431,23 @@ figure_1 <- wrap_plots(plot, ncol = 2) +
   theme(legend.position = "bottom")
 ggsave("distr_fixed_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200)
 
+#artificial
+plot_art <- list()
+plot_art[[1]]<- plot_ipcw_visit_unweighted(data = first_visit, ps = "ps_art", inf_cens = "art_cens", text_null = "No artificial censoring", text_one = "Artificial censoring")
+
+plot_art[[2]]<- plot_ipcw_visit_weighted(data = first_visit, ps = "ps_art", weight = "fixed_combined", inf_cens = "art_cens", text_null = "No artificial censoring", text_one = "Artificial censoring")
+
+figure_1 <- wrap_plots(plot_art, ncol = 2) + 
+  plot_annotation(tag_levels = "A") +
+  plot_layout(guides = "collect") & #only take one legend
+  theme(legend.position = "bottom")
+ggsave("distr_art_fixed_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200)
 
 #HH4.0 pool across visits----
 #with differences for informative censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["inf_cens_incl_death"]], #differences in informative censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in informative censoring yes or no
   weights  = imp_1[["combine_pool_visits"]], #take the combined pooled weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
@@ -1425,7 +1457,7 @@ bal <- bal.tab(
 
 plot <- love_plot(data = bal)
 
-ggsave("plot_pool_cens_high_hosp.pdf", plot, width = 12, height = 22, dpi = 1200)
+ggsave("plot_pool_cens_high_hosp.pdf", plot, width = 19, height = 22, dpi = 1200)
 
 #now for Treatment group
 bal <- bal.tab(
@@ -1440,7 +1472,7 @@ bal <- bal.tab(
 
 plot <- love_plot(data = bal)
 
-ggsave("plot_pool_treat_high_hosp.pdf", plot, width = 12, height = 22, dpi = 1200)
+ggsave("plot_pool_treat_high_hosp.pdf", plot, width = 19, height = 22, dpi = 1200)
 
 #now overall distribution censored & uncensored
 plot <- list()
@@ -1458,7 +1490,7 @@ ggsave("distr_pool_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1200
 #with differences for combined censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["cens_combine_incl_death"]], #differences in any censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in any censoring yes or no
   weights  = imp_1[["ipcw_inf_art"]], #take the combined pooled weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
@@ -1487,9 +1519,9 @@ ggsave("plot_combine_treat_high_hosp.pdf", plot, width = 19, height = 22, dpi = 
 
 #now overall distribution censored & uncensored
 plot <- list()
-plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb", inf_cens = "cens_combine_incl_death",  text_null = "No censoring", text_one = "Informative or Artificial censoring")
+plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb", inf_cens = "cens_combine",  text_null = "No censoring", text_one = "Informative or Artificial censoring")
 
-plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb", weight = "ipcw_inf_art", inf_cens = "cens_combine_incl_death",  text_null = "No censoring", text_one = "Informative or Artificial censoring")
+plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb", weight = "ipcw_inf_art", inf_cens = "cens_combine",  text_null = "No censoring", text_one = "Informative or Artificial censoring")
 
 figure_1 <- wrap_plots(plot, ncol = 2) + 
   plot_annotation(tag_levels = "A") + 
@@ -1501,7 +1533,7 @@ ggsave("distr_combine_high_hosp.pdf", figure_1, width = 16, height = 16, dpi = 1
 #with differences for combined censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["cens_combine_incl_death"]], #differences in any censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in any censoring yes or no
   weights  = imp_1[["ipcw_inf_art_all_visit"]], #take the combined pooled weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
@@ -1511,7 +1543,7 @@ bal <- bal.tab(
 
 plot <- love_plot(data = bal)
 
-ggsave("plot_combine_all_visit_cens_high_hosp.pdf", plot, width = 15, height = 22, dpi = 1200)
+ggsave("plot_combine_all_visit_cens_high_hosp.pdf", plot, width = 19, height = 22, dpi = 1200)
 
 #now for Treatment group
 bal <- bal.tab(
@@ -1526,13 +1558,13 @@ bal <- bal.tab(
 
 plot <- love_plot(data = bal)
 
-ggsave("plot_combine_all_visits_treat_high_hosp.pdf", plot, width = 12, height = 22, dpi = 1200)
+ggsave("plot_combine_all_visits_treat_high_hosp.pdf", plot, width = 19, height = 22, dpi = 1200)
 
 #now overall distribution censored & uncensored
 plot <- list()
-plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb_all", inf_cens = "cens_combine_incl_death", text_null = "No censoring", text_one = "Informative or Artificial censoring")
+plot[[1]] <- plot_ipcw_visit_unweighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb_all", inf_cens = "cens_combine", text_null = "No censoring", text_one = "Informative or Artificial censoring")
 
-plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb_all", weight = "ipcw_inf_art_all_visit", inf_cens = "cens_combine_incl_death", text_null = "No censoring", text_one = "Informative or Artificial censoring")
+plot[[2]] <- plot_ipcw_visit_weighted(data = data_ps_high_volume_hosp, ps = "prop_score_comb_all", weight = "ipcw_inf_art_all_visit", inf_cens = "cens_combine", text_null = "No censoring", text_one = "Informative or Artificial censoring")
 
 figure_1 <- wrap_plots(plot, ncol = 1) + 
   plot_annotation(tag_levels = "A") +
@@ -1544,7 +1576,7 @@ ggsave("distr_combine_all_high_hosp.pdf", figure_1, width = 16, height = 16, dpi
 #with differences for informative censoring
 bal <- bal.tab(
   covs,
-  treat    = imp_1[["inf_cens_incl_death"]], #differences in informative censoring yes or no
+  treat    = imp_1[["cens_combine"]], #differences in informative censoring yes or no
   weights  = imp_1[["ipcw_cap"]], #take the combined true weights
   cluster  = imp_1[["visit"]],     # do balance checks per vist
   which.cluster = .all,     # show all visits
