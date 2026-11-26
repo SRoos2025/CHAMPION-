@@ -12,7 +12,7 @@ pacman::p_load( "rio", #load data
           )
 
 ##define path to save any output to, and path import to import data
-path <- "..."
+path <- "C:/Users/z00676489/Documents/R scripts/"
 
 #load functions
 walk(list.files(paste0(path, "funs/")), \(x)source(paste0(path, "funs/", x)))
