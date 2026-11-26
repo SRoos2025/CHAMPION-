@@ -1,6 +1,6 @@
 #weighting function for conventional strategy (not high-volume), mortality outcome, pooled over all visits
 #specify imps before !
-weight_mortality_conv_strategy_pool <- function(data = data, outcome_inf = "inf_cens == 0", cens_var = "inf_cens" ) {
+weight_mortality_conv_strategy_pool <- function(data = data, outcome_inf = "inf_cens == 0", cens_var = "inf_cens", ident = "boot_unique_id") {
   
   fit_list_pool <- map(imps, ~glm_for_weighting_allvisits(i = .x, data = data, outcome = outcome_inf))
   
@@ -11,7 +11,7 @@ weight_mortality_conv_strategy_pool <- function(data = data, outcome_inf = "inf_
   #this is maybe because some treatment clones have the same visits but there are also clones with visits that are not present within the other clone?
   ps_list_pool <- map(imps, ~predict_weight_pool(i = .x, data = data, fit_list_pool = fit_list_pool))
   ps_list_pool <-  bind_rows(ps_list_pool) %>%
-    select(c(unique_id, visit, .imp, ps)) %>%
+    select(c(.data[[ident]], visit, .imp, ps)) %>%
     mutate(ps_pool = ps) %>%
     select(-ps)
   
@@ -29,7 +29,7 @@ weight_mortality_conv_strategy_pool <- function(data = data, outcome_inf = "inf_
   
   ps_list_art_pool <- map(imps, ~predict_weight_art_pool(i = .x, data = data, fit_list_art_pool = fit_list_art_pool))
   ps_list_art_pool <- bind_rows(ps_list_art_pool) %>%
-    select(c(unique_id, visit, .imp, ps)) %>%
+    select(c(.data[[ident]], visit, .imp, ps)) %>%
     mutate(ps_pool_art = ps) %>%
     select(-ps)
   
@@ -41,13 +41,13 @@ weight_mortality_conv_strategy_pool <- function(data = data, outcome_inf = "inf_
   #we can all left join these to data_unweighted
   for(i in objects) {
     data %<>%
-      left_join(get(i), by = c("unique_id", ".imp", "visit"))
+      left_join(get(i), by = c(ident, ".imp", "visit"))
   }
   
   data_ps <- data
   
   data_ps %<>%
-    group_by(unique_id, .imp) %>%
+    group_by(.data[[ident]], .imp) %>%
     mutate(
       ipcw_inf_cens_pool_true = case_when(
         .data[[cens_var]] == 1 ~ prop_score_marg_inf/ (1- ps_pool),
