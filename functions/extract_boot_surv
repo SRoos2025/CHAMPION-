@@ -1,0 +1,15 @@
+#function which creates list of dataframes, one for each of the 100 bootstraps
+#in this function, function "get_fit"
+extract_boot_surv <- function(b = 100, path = path){
+  
+  #get a list of datafrmaes containing rmst_hd and rmst_hdf
+  vec <- lapply(1:b, \(x){
+    load(paste0(path, "output", x, ".Rdata"))
+    fit_tmp <- output[[1]] #get the first in the output, which is the fitted curve data, so a list of 10 sets
+    surv_pool<- get_surv_estimates(fit_tmp = fit_tmp) #get pooled estimates for that bootstrap
+    return(surv_pool)
+  })
+  
+  return(vec)
+  
+}
