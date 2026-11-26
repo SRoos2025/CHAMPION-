@@ -1,0 +1,20 @@
+#we calculate the confidence intervals by extracting the 2.5% and 97.5% quantile of all the 100 bootstraps
+conf_int_rmst <- function(path = path){
+  
+  #create list of dataframes containing rmst_hd and rmst_hdf one for each of the 100 bootstraps
+  list_rmst <- extract_boot_rmst(b = 100, path)
+  
+  df <- bind_rows(list_rmst) #convert list back to dataframe
+  
+  #now we want the quartiles
+  bi_hd <- quantile(df[["rmst_hd"]], probs = c(0.025, 0.975))
+  bi_hdf <- quantile(df[["rmst_hdf"]], probs = c(0.025, 0.975))
+ ll_hd <- bi_hd[[1]]
+ ul_hd <- bi_hd[[2]]
+ ll_hdf <- bi_hdf[[1]]
+ ul_hdf <- bi_hdf[[2]]
+ 
+ rmst_conf_int <- data.frame(ll_hd, ul_hd, ll_hdf, ul_hdf)
+ 
+ return(rmst_conf_int)
+}
